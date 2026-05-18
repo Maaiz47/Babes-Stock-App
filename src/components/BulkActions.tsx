@@ -2,9 +2,9 @@
 import { useState } from 'react';
 import { Button } from './ui/button';
 import { Select } from './ui/select';
-import { Input } from './ui/input';
 import { Dialog } from './ui/dialog';
 import { useToast } from './ui/toast';
+import { BulkCountModal } from './BulkCountModal';
 import type { StockStatus } from '@/lib/types';
 import { Trash2, Tag, Hash, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -22,9 +22,8 @@ export function BulkActions({ selectedIds, allItems, onDone, onClearSelection }:
   const { success, error: toastError } = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [statusDialog, setStatusDialog] = useState(false);
-  const [qtyDialog, setQtyDialog] = useState(false);
+  const [countOpen, setCountOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<StockStatus>('in-stock');
-  const [newQty, setNewQty] = useState('');
   const [loading, setLoading] = useState(false);
 
   const count = selectedIds.length;
@@ -85,7 +84,7 @@ export function BulkActions({ selectedIds, allItems, onDone, onClearSelection }:
           <Button variant="outline" size="sm" onClick={() => setStatusDialog(true)} disabled={loading}>
             <Tag size={13} /> Set Status
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setQtyDialog(true)} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => setCountOpen(true)} disabled={loading}>
             <Hash size={13} /> Physical Count
           </Button>
           <Button variant="outline" size="sm" onClick={exportSelected} disabled={loading}>
@@ -132,37 +131,12 @@ export function BulkActions({ selectedIds, allItems, onDone, onClearSelection }:
         </div>
       </Dialog>
 
-      <Dialog open={qtyDialog} onClose={() => setQtyDialog(false)} title="Update Physical Count" size="sm">
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-gray-400 mb-1.5">Physical count for {count} item(s)</label>
-            <Input
-              type="number"
-              min={0}
-              value={newQty}
-              onChange={(e) => setNewQty(e.target.value)}
-              placeholder="Enter count…"
-              autoFocus
-            />
-            <p className="mt-1.5 text-xs text-gray-500">Items where this differs from system quantity will be flagged.</p>
-          </div>
-          <div className="flex gap-3 justify-end">
-            <Button variant="ghost" onClick={() => setQtyDialog(false)}>Cancel</Button>
-            <Button
-              onClick={async () => {
-                const q = parseInt(newQty, 10);
-                if (isNaN(q)) return;
-                await doAction('update_physical_qty', { physical_quantity: q });
-                setQtyDialog(false);
-                setNewQty('');
-              }}
-              disabled={loading || newQty === ''}
-            >
-              {loading ? 'Updating…' : 'Update Count'}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+      <BulkCountModal
+        open={countOpen}
+        onClose={() => setCountOpen(false)}
+        onDone={() => { onClearSelection(); onDone(); }}
+        selectedItems={allItems.filter(i => selectedIds.includes(i.id))}
+      />
     </>
   );
 }

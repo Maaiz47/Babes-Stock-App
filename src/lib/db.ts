@@ -428,6 +428,30 @@ export async function getItemHistory(stockItemId: string): Promise<HistoryEntry[
   }));
 }
 
+export async function bulkPhysicalCount(
+  items: { id: string; physical_quantity: number }[]
+): Promise<{ updated: number; errors: string[] }> {
+  let updated = 0;
+  const errors: string[] = [];
+  for (const { id, physical_quantity } of items) {
+    try {
+      const current = await getStockItem(id);
+      if (!current) { errors.push(`${id}: not found`); continue; }
+      await sql`
+        UPDATE stock_items SET physical_quantity = ${physical_quantity}, updated_at = NOW() WHERE id = ${id}
+      `;
+      await sql`
+        INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, physical_before, physical_after, notes)
+        VALUES (${id}, ${current.stock_number}, 'count', ${current.quantity}, ${current.quantity}, ${current.physical_quantity ?? null}, ${physical_quantity}, 'Bulk count update')
+      `;
+      updated++;
+    } catch (e) {
+      errors.push(`${id}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { updated, errors };
+}
+
 export async function getDistinctValues(field: 'category' | 'rack_number' | 'stored_by' | 'released_to' | 'received_by'): Promise<string[]> {
   const result = await sql.query(
     `SELECT DISTINCT ${field} FROM stock_items WHERE ${field} IS NOT NULL AND ${field} != '' ORDER BY ${field}`,
