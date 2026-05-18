@@ -220,13 +220,62 @@ export async function bulkAction(payload: BulkActionPayload): Promise<{ affected
   return { affected: 0 };
 }
 
-export async function bulkCreateStockItems(items: StockItemInput[], upsert = false): Promise<{ created: number; errors: string[] }> {
+export type ImportMode = 'general' | 'count' | 'release';
+
+export async function bulkCreateStockItems(
+  items: StockItemInput[],
+  mode: ImportMode = 'general'
+): Promise<{ created: number; errors: string[] }> {
   let created = 0;
   const errors: string[] = [];
 
   for (const item of items) {
     try {
-      if (upsert) {
+      if (mode === 'count') {
+        // Stock count: for existing items only update physical_quantity (preserve system qty).
+        // For new items, set physical_quantity = quantity as best guess.
+        const physQty = item.physical_quantity ?? item.quantity;
+        await sql`
+          INSERT INTO stock_items (
+            stock_number, name, description, category, rack_number,
+            quantity, physical_quantity, status, date_added, stored_by, notes
+          ) VALUES (
+            ${item.stock_number}, ${item.name}, ${item.description ?? null},
+            ${item.category ?? null}, ${item.rack_number ?? null},
+            ${physQty}, ${physQty},
+            ${item.status}, ${item.date_added}, ${item.stored_by ?? null}, ${item.notes ?? null}
+          )
+          ON CONFLICT (stock_number) DO UPDATE SET
+            physical_quantity = ${physQty},
+            updated_at = NOW()
+        `;
+      } else if (mode === 'release') {
+        // Stock release: for existing items update system quantity, release fields, status.
+        // Preserve physical_quantity.
+        await sql`
+          INSERT INTO stock_items (
+            stock_number, name, description, category, rack_number,
+            quantity, physical_quantity, status, date_added, date_removed,
+            released_to, received_by, stored_by, notes
+          ) VALUES (
+            ${item.stock_number}, ${item.name}, ${item.description ?? null},
+            ${item.category ?? null}, ${item.rack_number ?? null},
+            ${item.quantity}, ${item.physical_quantity ?? null},
+            'removed', ${item.date_added}, ${item.date_removed ?? null},
+            ${item.released_to ?? null}, ${item.received_by ?? null},
+            ${item.stored_by ?? null}, ${item.notes ?? null}
+          )
+          ON CONFLICT (stock_number) DO UPDATE SET
+            quantity = EXCLUDED.quantity,
+            status = 'removed',
+            date_removed = EXCLUDED.date_removed,
+            released_to = EXCLUDED.released_to,
+            received_by = EXCLUDED.received_by,
+            notes = EXCLUDED.notes,
+            updated_at = NOW()
+        `;
+      } else {
+        // General: full upsert or plain insert
         await sql`
           INSERT INTO stock_items (
             stock_number, name, description, category, rack_number,
@@ -256,8 +305,6 @@ export async function bulkCreateStockItems(items: StockItemInput[], upsert = fal
             notes = EXCLUDED.notes,
             updated_at = NOW()
         `;
-      } else {
-        await createStockItem(item);
       }
       created++;
     } catch (e) {

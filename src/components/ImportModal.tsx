@@ -6,9 +6,10 @@ import { Select } from './ui/select';
 import { useToast } from './ui/toast';
 import { DB_FIELDS, parseNumericField } from '@/lib/utils';
 import type { StockItemInput, ImportRow, ColumnMapping } from '@/lib/types';
+import type { ImportMode } from '@/lib/db';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
-import { Upload, FileText, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle2, ClipboardList, PackageOpen, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -19,27 +20,52 @@ interface Props {
 
 type Step = 'upload' | 'map' | 'preview' | 'done';
 
+const MODES: { value: ImportMode; label: string; desc: string; icon: React.ReactNode; hint: string }[] = [
+  {
+    value: 'count',
+    label: 'Stock Count',
+    desc: 'Physical count of stock on hand',
+    icon: <ClipboardList size={20} />,
+    hint: 'Updates physical count. Flags mismatches vs system quantity. System quantity is preserved for existing items.',
+  },
+  {
+    value: 'release',
+    label: 'Stock Release',
+    desc: 'Stock going out / released',
+    icon: <PackageOpen size={20} />,
+    hint: 'Records who stock was released to and received by. Updates system quantity for existing items.',
+  },
+  {
+    value: 'general',
+    label: 'General Import',
+    desc: 'Add or update any fields',
+    icon: <Layers size={20} />,
+    hint: 'Full upsert — all mapped columns are written. Use this to initially load stock data.',
+  },
+];
+
 export function ImportModal({ open, onClose, onImported }: Props) {
   const { success, error: toastError, warning } = useToast();
   const [step, setStep] = useState<Step>('upload');
+  const [mode, setMode] = useState<ImportMode>('count');
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
   const [result, setResult] = useState<{ created: number; errors: string[] } | null>(null);
   const [importing, setImporting] = useState(false);
-  const [upsert, setUpsert] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setStep('upload');
+    setMode('count');
     setRows([]);
     setHeaders([]);
     setMappings([]);
     setResult(null);
   };
 
-  const handleFile = (file: File) => {
+  const processFile = (file: File, selectedMode: ImportMode) => {
     const isCSV = file.name.endsWith('.csv') || file.type === 'text/csv';
     const isExcel = file.name.match(/\.(xlsx|xls)$/);
 
@@ -51,7 +77,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
           const hdrs = res.meta.fields ?? [];
           setHeaders(hdrs);
           setRows(res.data);
-          setMappings(hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h) })));
+          setMappings(hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h, selectedMode) })));
           setStep('map');
         },
         error: () => toastError('Parse error', 'Could not parse CSV file'),
@@ -67,7 +93,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
         const hdrs = Object.keys(json[0]);
         setHeaders(hdrs);
         setRows(json);
-        setMappings(hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h) })));
+        setMappings(hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h, selectedMode) })));
         setStep('map');
       };
       reader.readAsArrayBuffer(file);
@@ -76,16 +102,21 @@ export function ImportModal({ open, onClose, onImported }: Props) {
     }
   };
 
-  const autoMap = (header: string): keyof StockItemInput | '' => {
+  const handleFile = (file: File) => processFile(file, mode);
+
+  const autoMap = (header: string, m: ImportMode): keyof StockItemInput | '' => {
     const h = header.toLowerCase().replace(/[\s_-]+/g, '_');
+    // In count mode, generic qty columns → physical_quantity (not system quantity)
+    const qtyField: keyof StockItemInput = m === 'count' ? 'physical_quantity' : 'quantity';
     const map: Record<string, keyof StockItemInput> = {
       stock_number: 'stock_number', stock_no: 'stock_number', sku: 'stock_number', id: 'stock_number',
       name: 'name', item: 'name', product: 'name', title: 'name',
       description: 'description', desc: 'description',
       category: 'category', type: 'category',
       rack: 'rack_number', rack_number: 'rack_number', location: 'rack_number',
-      quantity: 'quantity', qty: 'quantity', count: 'quantity', stock: 'quantity',
+      quantity: qtyField, qty: qtyField, count: qtyField, stock: qtyField,
       physical_quantity: 'physical_quantity', physical_count: 'physical_quantity', actual_qty: 'physical_quantity',
+      system_quantity: 'quantity', system_qty: 'quantity', system_stock: 'quantity',
       status: 'status',
       date_added: 'date_added', added: 'date_added', date: 'date_added',
       date_removed: 'date_removed', removed: 'date_removed',
@@ -161,7 +192,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
       const res = await fetch('/api/stock/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'import', items, upsert }),
+        body: JSON.stringify({ action: 'import', items, mode }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed');
@@ -182,8 +213,8 @@ export function ImportModal({ open, onClose, onImported }: Props) {
     e.preventDefault();
     setDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  }, []);
+    if (file) processFile(file, mode);
+  }, [mode]);
 
   const requiredMapped = mappings.some((m) => m.dbField === 'stock_number') &&
     mappings.some((m) => m.dbField === 'name');
@@ -219,20 +250,61 @@ export function ImportModal({ open, onClose, onImported }: Props) {
       </div>
 
       {step === 'upload' && (
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-          onClick={() => fileRef.current?.click()}
-          className={cn(
-            'border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all',
-            dragging ? 'border-violet-400 bg-violet-500/10' : 'border-white/15 hover:border-white/30 hover:bg-white/4'
-          )}
-        >
-          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
-          <Upload size={32} className="mx-auto mb-3 text-gray-500" />
-          <p className="text-sm font-medium text-gray-300">Drop your file here, or click to browse</p>
-          <p className="mt-1 text-xs text-gray-500">Supports .csv, .xlsx, .xls</p>
+        <div className="space-y-5">
+          <div>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Import Type</p>
+            <div className="grid grid-cols-1 gap-2">
+              {MODES.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setMode(m.value)}
+                  className={cn(
+                    'flex items-start gap-3 w-full rounded-xl border px-4 py-3 text-left transition-all',
+                    mode === m.value
+                      ? 'border-violet-500/60 bg-violet-500/10'
+                      : 'border-white/8 bg-white/3 hover:bg-white/6'
+                  )}
+                >
+                  <span className={cn('mt-0.5 shrink-0', mode === m.value ? 'text-violet-400' : 'text-gray-500')}>
+                    {m.icon}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className={cn('text-sm font-semibold', mode === m.value ? 'text-white' : 'text-gray-300')}>
+                      {m.label}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">{m.hint}</p>
+                  </div>
+                  <div className={cn(
+                    'w-4 h-4 rounded-full border-2 shrink-0 mt-1 transition-all',
+                    mode === m.value ? 'border-violet-400 bg-violet-400' : 'border-white/20'
+                  )} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) processFile(f, mode); }}
+            onClick={() => fileRef.current?.click()}
+            className={cn(
+              'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all',
+              dragging ? 'border-violet-400 bg-violet-500/10' : 'border-white/15 hover:border-white/30 hover:bg-white/4'
+            )}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="hidden"
+              onChange={(e) => { if (e.target.files?.[0]) processFile(e.target.files[0], mode); }}
+            />
+            <Upload size={28} className="mx-auto mb-3 text-gray-500" />
+            <p className="text-sm font-medium text-gray-300">Drop your file here, or tap to browse</p>
+            <p className="mt-1 text-xs text-gray-500">Supports .csv, .xlsx, .xls</p>
+          </div>
         </div>
       )}
 
@@ -298,21 +370,15 @@ export function ImportModal({ open, onClose, onImported }: Props) {
           </div>
           {rows.length > 5 && <p className="text-xs text-gray-500 text-center">…and {rows.length - 5} more</p>}
 
-          <label className="flex items-center gap-3 py-2 cursor-pointer">
-            <div
-              onClick={() => setUpsert(u => !u)}
-              className={cn(
-                'w-9 h-5 rounded-full border transition-colors flex items-center px-0.5 cursor-pointer shrink-0',
-                upsert ? 'bg-violet-500 border-violet-500' : 'bg-white/10 border-white/20'
-              )}
-            >
-              <div className={cn('w-4 h-4 rounded-full bg-white transition-transform', upsert ? 'translate-x-4' : 'translate-x-0')} />
-            </div>
-            <div>
-              <p className="text-sm text-gray-200">Update existing items</p>
-              <p className="text-xs text-gray-500">If a stock number already exists, overwrite it instead of skipping</p>
-            </div>
-          </label>
+          <div className={cn(
+            'flex items-center gap-2 px-3 py-2 rounded-lg text-xs',
+            mode === 'count' ? 'bg-blue-500/10 text-blue-300' :
+            mode === 'release' ? 'bg-amber-500/10 text-amber-300' :
+            'bg-white/5 text-gray-400'
+          )}>
+            {MODES.find(m => m.value === mode)?.icon}
+            <span><strong>{MODES.find(m => m.value === mode)?.label}:</strong> {MODES.find(m => m.value === mode)?.hint}</span>
+          </div>
 
           <div className="flex gap-3 justify-end pt-2 border-t border-white/8 sticky bottom-0 bg-gray-900 pb-1">
             <Button variant="ghost" onClick={() => setStep('map')}>Back</Button>

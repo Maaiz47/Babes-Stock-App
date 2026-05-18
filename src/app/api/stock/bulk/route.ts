@@ -6,7 +6,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     if (body.action === 'import') {
-      const result = await bulkCreateStockItems(body.items, body.upsert === true);
+      const result = await bulkCreateStockItems(body.items, body.mode ?? 'general');
       return NextResponse.json(result);
     }
 
