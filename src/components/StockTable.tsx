@@ -8,8 +8,7 @@ import { Dialog } from './ui/dialog';
 import { useToast } from './ui/toast';
 import {
   Pencil, Trash2, AlertTriangle, ChevronUp, ChevronDown,
-  ChevronsUpDown, MapPin, Hash, User, Calendar,
-  ArrowUpDown, Package
+  ChevronsUpDown, MapPin, Package
 } from 'lucide-react';
 
 type SortKey = keyof Pick<StockItem, 'stock_number' | 'name' | 'quantity' | 'status' | 'date_added' | 'date_removed' | 'rack_number' | 'category'>;
@@ -30,7 +29,6 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
   const [deleting, setDeleting] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('date_added');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -54,7 +52,8 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
     else onSelectChange(items.map((i) => i.id));
   };
 
-  const toggleItem = (id: string) => {
+  const toggleItem = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
     if (selectedIds.includes(id)) onSelectChange(selectedIds.filter((x) => x !== id));
     else onSelectChange([...selectedIds, id]);
   };
@@ -130,117 +129,92 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
               </th>
               <ColHeader label="Stock #" sortK="stock_number" />
               <ColHeader label="Name" sortK="name" />
-              <ColHeader label="Category" sortK="category" />
-              <ColHeader label="Rack" sortK="rack_number" />
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide hidden md:table-cell">Category</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide hidden md:table-cell">Rack</th>
               <ColHeader label="Qty" sortK="quantity" />
               <ColHeader label="Status" sortK="status" />
-              <ColHeader label="Date Added" sortK="date_added" />
-              <ColHeader label="Date Removed" sortK="date_removed" />
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide hidden sm:table-cell">Date Added</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide hidden sm:table-cell">Date Removed</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
             {sorted.map((item) => {
               const selected = selectedIds.includes(item.id);
-              const expanded = expandedId === item.id;
               return (
-                <>
-                  <tr
-                    key={item.id}
-                    onClick={() => setExpandedId(expanded ? null : item.id)}
-                    className={cn(
-                      'group cursor-pointer transition-colors',
-                      selected ? 'bg-violet-500/8' : 'hover:bg-white/3',
-                      item.quantity_mismatch && 'border-l-2 border-l-amber-500'
-                    )}
-                  >
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={() => toggleItem(item.id)}
-                        className="rounded border-white/20 bg-white/10 accent-violet-500 cursor-pointer"
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-gray-300">{item.stock_number}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-100">{item.name}</span>
-                        {item.quantity_mismatch && (
-                          <AlertTriangle size={13} className="text-amber-400 shrink-0" aria-label="Quantity mismatch" />
-                        )}
-                      </div>
-                      {item.description && (
-                        <p className="text-xs text-gray-500 truncate max-w-xs mt-0.5">{item.description}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{item.category || '—'}</td>
-                    <td className="px-4 py-3">
-                      {item.rack_number
-                        ? <span className="inline-flex items-center gap-1 text-xs text-gray-300"><MapPin size={11} className="text-gray-500" />{item.rack_number}</span>
-                        : <span className="text-gray-600">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-100">{item.quantity}</span>
-                        {item.physical_quantity !== null && item.physical_quantity !== undefined && (
-                          <span className={cn(
-                            'text-xs px-1.5 py-0.5 rounded font-mono',
-                            item.quantity_mismatch
-                              ? 'bg-amber-500/15 text-amber-400'
-                              : 'bg-emerald-500/15 text-emerald-400'
-                          )}>
-                            /{item.physical_quantity}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge className={STATUS_COLORS[item.status]}>{STATUS_LABELS[item.status]}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-400">{formatDate(item.date_added)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-400">{formatDate(item.date_removed)}</td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon-sm" onClick={() => onEdit(item)}>
-                          <Pencil size={13} />
-                        </Button>
-                        <Button variant="ghost" size="icon-sm" className="hover:text-red-400 hover:bg-red-500/10" onClick={() => setDeleteId(item.id)}>
-                          <Trash2 size={13} />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                  {expanded && (
-                    <tr key={`${item.id}-detail`} className={cn('bg-white/2', selected && 'bg-violet-500/5')}>
-                      <td />
-                      <td colSpan={9} className="px-4 py-3">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                          <div>
-                            <p className="text-gray-500 flex items-center gap-1 mb-0.5"><User size={11} /> Stored By</p>
-                            <p className="text-gray-300">{item.stored_by || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-gray-500 flex items-center gap-1 mb-0.5"><User size={11} /> Released To</p>
-                            <p className="text-gray-300">{item.released_to || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-gray-500 flex items-center gap-1 mb-0.5"><User size={11} /> Received By</p>
-                            <p className="text-gray-300">{item.received_by || '—'}</p>
-                          </div>
-                          {item.notes && (
-                            <div className="col-span-2 md:col-span-1">
-                              <p className="text-gray-500 mb-0.5">Notes</p>
-                              <p className="text-gray-300">{item.notes}</p>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                <tr
+                  key={item.id}
+                  onClick={() => onEdit(item)}
+                  className={cn(
+                    'group cursor-pointer transition-colors active:bg-white/8',
+                    selected ? 'bg-violet-500/8' : 'hover:bg-white/3',
+                    item.quantity_mismatch && 'border-l-2 border-l-amber-500'
                   )}
-                </>
+                >
+                  <td className="px-3 py-3" onClick={(e) => toggleItem(e, item.id)}>
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => {}}
+                      className="rounded border-white/20 bg-white/10 accent-violet-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className="font-mono text-xs text-gray-300">{item.stock_number}</span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-100">{item.name}</span>
+                      {item.quantity_mismatch && (
+                        <AlertTriangle size={13} className="text-amber-400 shrink-0" />
+                      )}
+                    </div>
+                    {item.description && (
+                      <p className="text-xs text-gray-500 truncate max-w-xs mt-0.5">{item.description}</p>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-gray-400 text-xs hidden md:table-cell">{item.category || '—'}</td>
+                  <td className="px-3 py-3 hidden md:table-cell">
+                    {item.rack_number
+                      ? <span className="inline-flex items-center gap-1 text-xs text-gray-300"><MapPin size={11} className="text-gray-500" />{item.rack_number}</span>
+                      : <span className="text-gray-600">—</span>}
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-gray-100">{item.quantity}</span>
+                      {item.physical_quantity !== null && item.physical_quantity !== undefined && (
+                        <span className={cn(
+                          'text-xs px-1.5 py-0.5 rounded font-mono',
+                          item.quantity_mismatch
+                            ? 'bg-amber-500/15 text-amber-400'
+                            : 'bg-emerald-500/15 text-emerald-400'
+                        )}>
+                          /{item.physical_quantity}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <Badge className={STATUS_COLORS[item.status]}>{STATUS_LABELS[item.status]}</Badge>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-gray-400 hidden sm:table-cell">{formatDate(item.date_added)}</td>
+                  <td className="px-3 py-3 text-xs text-gray-400 hidden sm:table-cell">{formatDate(item.date_removed)}</td>
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1 justify-end">
+                      <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); onEdit(item); }}>
+                        <Pencil size={13} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-gray-600 hover:text-red-400 hover:bg-red-500/10"
+                        onClick={(e) => { e.stopPropagation(); setDeleteId(item.id); }}
+                      >
+                        <Trash2 size={13} />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
               );
             })}
           </tbody>

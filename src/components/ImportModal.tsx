@@ -27,6 +27,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
   const [result, setResult] = useState<{ created: number; errors: string[] } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [upsert, setUpsert] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -160,7 +161,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
       const res = await fetch('/api/stock/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'import', items }),
+        body: JSON.stringify({ action: 'import', items, upsert }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed');
@@ -296,6 +297,23 @@ export function ImportModal({ open, onClose, onImported }: Props) {
             </table>
           </div>
           {rows.length > 5 && <p className="text-xs text-gray-500 text-center">…and {rows.length - 5} more</p>}
+
+          <label className="flex items-center gap-3 py-2 cursor-pointer">
+            <div
+              onClick={() => setUpsert(u => !u)}
+              className={cn(
+                'w-9 h-5 rounded-full border transition-colors flex items-center px-0.5 cursor-pointer shrink-0',
+                upsert ? 'bg-violet-500 border-violet-500' : 'bg-white/10 border-white/20'
+              )}
+            >
+              <div className={cn('w-4 h-4 rounded-full bg-white transition-transform', upsert ? 'translate-x-4' : 'translate-x-0')} />
+            </div>
+            <div>
+              <p className="text-sm text-gray-200">Update existing items</p>
+              <p className="text-xs text-gray-500">If a stock number already exists, overwrite it instead of skipping</p>
+            </div>
+          </label>
+
           <div className="flex gap-3 justify-end pt-2 border-t border-white/8 sticky bottom-0 bg-gray-900 pb-1">
             <Button variant="ghost" onClick={() => setStep('map')}>Back</Button>
             <Button onClick={doImport} disabled={importing}>
