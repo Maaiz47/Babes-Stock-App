@@ -5,6 +5,7 @@ import { StockForm } from '@/components/StockForm';
 import { FilterPanel } from '@/components/FilterPanel';
 import { BulkActions } from '@/components/BulkActions';
 import { ImportModal } from '@/components/ImportModal';
+import { QuickAdjust } from '@/components/QuickAdjust';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
@@ -34,6 +35,7 @@ export default function HomePage() {
   const [editItem, setEditItem] = useState<StockItem | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [quickItem, setQuickItem] = useState<StockItem | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [racks, setRacks] = useState<string[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -187,6 +189,11 @@ export default function HomePage() {
               onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
             />
           </div>
+          {items.length > 0 && selectedIds.length === 0 && (filters.search || Object.values(filters).some(v => v !== '' && v !== false)) && (
+            <Button variant="outline" size="sm" onClick={() => setSelectedIds(items.map(i => i.id))}>
+              Select all {items.length}
+            </Button>
+          )}
           {stats.mismatches > 0 && (
             <Button
               variant={filters.mismatch_only ? 'warning' : 'outline'}
@@ -221,6 +228,7 @@ export default function HomePage() {
           selectedIds={selectedIds}
           onSelectChange={setSelectedIds}
           onEdit={(item) => { setEditItem(item); setFormOpen(true); }}
+          onQuickAdjust={(item) => setQuickItem(item)}
           onRefresh={refresh}
         />
 
@@ -235,6 +243,8 @@ export default function HomePage() {
         onSaved={refresh}
         item={editItem}
       />
+
+      <QuickAdjust item={quickItem} onClose={() => setQuickItem(null)} onSaved={refresh} />
 
       <ImportModal
         open={importOpen}

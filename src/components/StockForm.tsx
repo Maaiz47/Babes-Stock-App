@@ -9,6 +9,7 @@ import { useToast } from './ui/toast';
 import { generateStockNumber } from '@/lib/utils';
 import type { StockItem, StockItemInput, StockStatus } from '@/lib/types';
 import { Wand2 } from 'lucide-react';
+import { HistoryPanel } from './HistoryPanel';
 
 interface FormData {
   stock_number: string;
@@ -240,6 +241,8 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
             className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-colors resize-none"
           />
         </Field>
+
+        {isEdit && item && <HistoryPanel itemId={item.id} />}
 
         <div className="flex gap-3 justify-end pt-2 border-t border-white/8">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>

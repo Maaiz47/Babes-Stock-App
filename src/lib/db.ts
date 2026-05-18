@@ -32,6 +32,28 @@ export async function initDB() {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_date_added ON stock_items(date_added);
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS stock_history (
+      id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+      stock_item_id UUID NOT NULL,
+      stock_number TEXT NOT NULL,
+      change_type TEXT NOT NULL,
+      quantity_before INTEGER,
+      quantity_after INTEGER,
+      physical_before INTEGER,
+      physical_after INTEGER,
+      delta INTEGER,
+      notes TEXT,
+      changed_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_history_item ON stock_history(stock_item_id)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_history_created ON stock_history(created_at DESC)
+  `;
 }
 
 function mapRow(row: Record<string, unknown>): StockItem {
@@ -66,7 +88,7 @@ export async function getStockItems(filters: Partial<StockFilters> = {}): Promis
 
   if (filters.search) {
     conditions.push(
-      `(name ILIKE $${idx} OR stock_number ILIKE $${idx} OR description ILIKE $${idx} OR category ILIKE $${idx})`
+      `(name ILIKE $${idx} OR stock_number ILIKE $${idx} OR description ILIKE $${idx} OR category ILIKE $${idx} OR rack_number ILIKE $${idx} OR released_to ILIKE $${idx} OR received_by ILIKE $${idx} OR stored_by ILIKE $${idx} OR status ILIKE $${idx} OR notes ILIKE $${idx})`
     );
     values.push(`%${filters.search}%`);
     idx++;
@@ -313,6 +335,85 @@ export async function bulkCreateStockItems(
   }
 
   return { created, errors };
+}
+
+export async function adjustQuantity(
+  id: string,
+  type: 'add' | 'subtract' | 'set_system' | 'count',
+  amount: number,
+  opts?: { notes?: string; changed_by?: string }
+): Promise<StockItem> {
+  const current = await getStockItem(id);
+  if (!current) throw new Error('Item not found');
+
+  let newQty = current.quantity;
+  let newPhysical = current.physical_quantity ?? null;
+
+  if (type === 'add') newQty = current.quantity + amount;
+  else if (type === 'subtract') newQty = Math.max(0, current.quantity - amount);
+  else if (type === 'set_system') newQty = amount;
+  else if (type === 'count') newPhysical = amount;
+
+  const result = await sql`
+    UPDATE stock_items SET
+      quantity = ${type === 'count' ? current.quantity : newQty},
+      physical_quantity = ${type === 'count' ? newPhysical : current.physical_quantity ?? null},
+      updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+
+  // Record history
+  await sql`
+    INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, physical_before, physical_after, delta, notes, changed_by)
+    VALUES (
+      ${id}, ${current.stock_number}, ${type},
+      ${current.quantity}, ${type === 'count' ? current.quantity : newQty},
+      ${current.physical_quantity ?? null}, ${type === 'count' ? newPhysical : current.physical_quantity ?? null},
+      ${type === 'add' ? amount : type === 'subtract' ? -amount : type === 'set_system' ? newQty - current.quantity : null},
+      ${opts?.notes ?? null}, ${opts?.changed_by ?? null}
+    )
+  `;
+
+  return mapRow(result.rows[0]);
+}
+
+export interface HistoryEntry {
+  id: string;
+  stock_item_id: string;
+  stock_number: string;
+  change_type: string;
+  quantity_before: number | null;
+  quantity_after: number | null;
+  physical_before: number | null;
+  physical_after: number | null;
+  delta: number | null;
+  notes: string | null;
+  changed_by: string | null;
+  created_at: string;
+}
+
+export async function getItemHistory(stockItemId: string): Promise<HistoryEntry[]> {
+  const result = await sql`
+    SELECT * FROM stock_history
+    WHERE stock_item_id = ${stockItemId}
+    ORDER BY created_at DESC
+    LIMIT 50
+  `;
+  return result.rows.map(r => ({
+    id: String(r.id),
+    stock_item_id: String(r.stock_item_id),
+    stock_number: String(r.stock_number),
+    change_type: String(r.change_type),
+    quantity_before: r.quantity_before != null ? Number(r.quantity_before) : null,
+    quantity_after: r.quantity_after != null ? Number(r.quantity_after) : null,
+    physical_before: r.physical_before != null ? Number(r.physical_before) : null,
+    physical_after: r.physical_after != null ? Number(r.physical_after) : null,
+    delta: r.delta != null ? Number(r.delta) : null,
+    notes: r.notes ? String(r.notes) : null,
+    changed_by: r.changed_by ? String(r.changed_by) : null,
+    created_at: String(r.created_at),
+  }));
 }
 
 export async function getDistinctValues(field: 'category' | 'rack_number' | 'stored_by' | 'released_to' | 'received_by'): Promise<string[]> {

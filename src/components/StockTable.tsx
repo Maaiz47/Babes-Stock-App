@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { StockItem } from '@/lib/types';
 import { formatDate, STATUS_LABELS, STATUS_COLORS, cn } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -20,15 +20,18 @@ interface Props {
   selectedIds: string[];
   onSelectChange: (ids: string[]) => void;
   onEdit: (item: StockItem) => void;
+  onQuickAdjust: (item: StockItem) => void;
   onRefresh: () => void;
 }
 
-export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit, onRefresh }: Props) {
+export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit, onQuickAdjust, onRefresh }: Props) {
   const { success, error: toastError } = useToast();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('date_added');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const pressTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const didMove = useRef<Set<string>>(new Set());
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -144,7 +147,24 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
               return (
                 <tr
                   key={item.id}
-                  onClick={() => onEdit(item)}
+                  onPointerDown={() => {
+                    didMove.current.delete(item.id);
+                    const t = setTimeout(() => { if (!didMove.current.has(item.id)) onEdit(item); }, 500);
+                    pressTimers.current.set(item.id, t);
+                  }}
+                  onPointerMove={() => didMove.current.add(item.id)}
+                  onPointerUp={() => {
+                    const t = pressTimers.current.get(item.id);
+                    if (t) {
+                      clearTimeout(t);
+                      pressTimers.current.delete(item.id);
+                      if (!didMove.current.has(item.id)) onQuickAdjust(item);
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    const t = pressTimers.current.get(item.id);
+                    if (t) { clearTimeout(t); pressTimers.current.delete(item.id); }
+                  }}
                   className={cn(
                     'group cursor-pointer transition-colors active:bg-white/8',
                     selected ? 'bg-violet-500/8' : 'hover:bg-white/3',
@@ -219,6 +239,9 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
             })}
           </tbody>
         </table>
+        <div className="px-4 py-2 border-t border-white/5 bg-white/2">
+          <p className="text-[10px] text-gray-600 text-center">tap to adjust · hold to edit</p>
+        </div>
       </div>
 
       <Dialog open={!!deleteId} onClose={() => setDeleteId(null)} title="Delete Item" size="sm">
