@@ -100,6 +100,14 @@ export function ImportModal({ open, onClose, onImported }: Props) {
     setMappings((prev) => prev.map((m) => m.csvColumn === csvColumn ? { ...m, dbField } : m));
   };
 
+  const normaliseStatus = (raw: string | undefined): StockItemInput['status'] => {
+    const s = (raw ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    if (s.includes('low') || s.includes('lowstock')) return 'low-stock';
+    if (s.includes('remov') || s.includes('sold') || s.includes('gone') || s.includes('unavail') || s.includes('repurchase')) return 'removed';
+    if (s.includes('reserv') || s.includes('held') || s.includes('pending')) return 'reserved';
+    return 'in-stock';
+  };
+
   const buildItems = (): { items: StockItemInput[]; warnings: string[] } => {
     const today = new Date().toISOString().split('T')[0];
     const warnings: string[] = [];
@@ -130,7 +138,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
         rack_number: item.rack_number ?? undefined,
         quantity: Number(item.quantity ?? 0),
         physical_quantity: item.physical_quantity != null ? Number(item.physical_quantity) : null,
-        status: (item.status as StockItemInput['status']) || 'in-stock',
+        status: normaliseStatus(item.status as string | undefined),
         date_added: item.date_added || today,
         date_removed: item.date_removed ?? null,
         released_to: item.released_to ?? null,
@@ -228,9 +236,9 @@ export function ImportModal({ open, onClose, onImported }: Props) {
       )}
 
       {step === 'map' && (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           <p className="text-sm text-gray-400">{rows.length} rows found. Map your columns to the correct fields.</p>
-          <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+          <div className="space-y-2">
             {mappings.map((m) => (
               <div key={m.csvColumn} className="flex items-center gap-3">
                 <div className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-300 font-mono truncate">
@@ -253,7 +261,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
               <AlertCircle size={13} /> Map at least <strong>Stock Number</strong> and <strong>Name</strong> to proceed
             </div>
           )}
-          <div className="flex gap-3 justify-end pt-2 border-t border-white/8">
+          <div className="flex gap-3 justify-end pt-2 border-t border-white/8 sticky bottom-0 bg-gray-900 pb-1">
             <Button variant="ghost" onClick={reset}>Back</Button>
             <Button onClick={() => setStep('preview')} disabled={!requiredMapped}>Preview →</Button>
           </div>
@@ -261,7 +269,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
       )}
 
       {step === 'preview' && (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           <p className="text-sm text-gray-400">Preview of first 5 rows. Ready to import {rows.length} items.</p>
           <div className="overflow-x-auto rounded-xl border border-white/10">
             <table className="w-full text-xs">
@@ -288,7 +296,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
             </table>
           </div>
           {rows.length > 5 && <p className="text-xs text-gray-500 text-center">…and {rows.length - 5} more</p>}
-          <div className="flex gap-3 justify-end pt-2 border-t border-white/8">
+          <div className="flex gap-3 justify-end pt-2 border-t border-white/8 sticky bottom-0 bg-gray-900 pb-1">
             <Button variant="ghost" onClick={() => setStep('map')}>Back</Button>
             <Button onClick={doImport} disabled={importing}>
               {importing ? 'Importing…' : `Import ${rows.length} Items`}

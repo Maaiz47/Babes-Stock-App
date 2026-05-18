@@ -43,20 +43,22 @@ export function Dialog({ open, onClose, title, description, children, className,
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
       <div
         className={cn(
-          'relative w-full bg-gray-900 border border-white/10 rounded-2xl shadow-2xl shadow-black/50',
-          'animate-in fade-in-0 zoom-in-95 duration-150',
+          'relative w-full bg-gray-900 border border-white/10 shadow-2xl shadow-black/50',
+          'rounded-t-2xl sm:rounded-2xl',
+          'flex flex-col max-h-[92dvh] sm:max-h-[90vh]',
+          'animate-in fade-in-0 slide-in-from-bottom-2 sm:zoom-in-95 duration-150',
           sizeMap[size],
           className
         )}
       >
         {(title || description) && (
-          <div className="flex items-start justify-between p-6 pb-4 border-b border-white/8">
+          <div className="flex items-start justify-between p-5 pb-4 border-b border-white/8 shrink-0">
             <div>
               {title && <h2 className="text-lg font-semibold text-white">{title}</h2>}
               {description && <p className="mt-1 text-sm text-gray-400">{description}</p>}
@@ -69,7 +71,7 @@ export function Dialog({ open, onClose, title, description, children, className,
             </button>
           </div>
         )}
-        <div className={cn('p-6', title || description ? 'pt-4' : '')}>
+        <div className={cn('overflow-y-auto flex-1 p-5', title || description ? 'pt-4' : '')}>
           {children}
         </div>
       </div>
