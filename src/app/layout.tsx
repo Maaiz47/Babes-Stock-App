@@ -7,8 +7,16 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Babes Stock — Inventory Manager',
+  title: 'Pacific Stock',
   description: 'Stock inventory management',
+  appleWebApp: {
+    capable: true,
+    title: 'Pacific Stock',
+    statusBarStyle: 'black-translucent',
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
