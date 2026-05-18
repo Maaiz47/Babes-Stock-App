@@ -32,6 +32,7 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const pressTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const didMove = useRef<Set<string>>(new Set());
+  const longPressed = useRef<Set<string>>(new Set());
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -149,7 +150,13 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                   key={item.id}
                   onPointerDown={() => {
                     didMove.current.delete(item.id);
-                    const t = setTimeout(() => { if (!didMove.current.has(item.id)) onEdit(item); }, 500);
+                    longPressed.current.delete(item.id);
+                    const t = setTimeout(() => {
+                      if (!didMove.current.has(item.id)) {
+                        longPressed.current.add(item.id);
+                        onEdit(item);
+                      }
+                    }, 500);
                     pressTimers.current.set(item.id, t);
                   }}
                   onPointerMove={() => didMove.current.add(item.id)}
@@ -158,7 +165,10 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                     if (t) {
                       clearTimeout(t);
                       pressTimers.current.delete(item.id);
-                      if (!didMove.current.has(item.id)) onQuickAdjust(item);
+                      if (!didMove.current.has(item.id) && !longPressed.current.has(item.id)) {
+                        onQuickAdjust(item);
+                      }
+                      longPressed.current.delete(item.id);
                     }
                   }}
                   onPointerLeave={() => {

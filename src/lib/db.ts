@@ -341,7 +341,7 @@ export async function adjustQuantity(
   id: string,
   type: 'add' | 'subtract' | 'set_system' | 'count',
   amount: number,
-  opts?: { notes?: string; changed_by?: string }
+  opts?: { notes?: string; changed_by?: string; taken_by?: string }
 ): Promise<StockItem> {
   const current = await getStockItem(id);
   if (!current) throw new Error('Item not found');
@@ -349,29 +349,41 @@ export async function adjustQuantity(
   let newQty = current.quantity;
   let newPhysical = current.physical_quantity ?? null;
 
-  if (type === 'add') newQty = current.quantity + amount;
-  else if (type === 'subtract') newQty = Math.max(0, current.quantity - amount);
-  else if (type === 'set_system') newQty = amount;
-  else if (type === 'count') newPhysical = amount;
+  if (type === 'add') {
+    newQty = current.quantity + amount;
+    // Mirror the change on physical stock too
+    newPhysical = (current.physical_quantity ?? current.quantity) + amount;
+  } else if (type === 'subtract') {
+    newQty = Math.max(0, current.quantity - amount);
+    newPhysical = Math.max(0, (current.physical_quantity ?? current.quantity) - amount);
+  } else if (type === 'set_system') {
+    newQty = amount;
+    // physical stays unchanged for manual system overrides
+  } else if (type === 'count') {
+    newPhysical = amount;
+    // system qty stays unchanged — mismatch will be flagged
+  }
+
+  const takenBy = type === 'subtract' && opts?.taken_by ? opts.taken_by : null;
 
   const result = await sql`
     UPDATE stock_items SET
-      quantity = ${type === 'count' ? current.quantity : newQty},
-      physical_quantity = ${type === 'count' ? newPhysical : current.physical_quantity ?? null},
+      quantity = ${newQty},
+      physical_quantity = ${newPhysical},
+      released_to = CASE WHEN ${takenBy} IS NOT NULL THEN ${takenBy} ELSE released_to END,
       updated_at = NOW()
     WHERE id = ${id}
     RETURNING *
   `;
 
-  // Record history
   await sql`
     INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, physical_before, physical_after, delta, notes, changed_by)
     VALUES (
       ${id}, ${current.stock_number}, ${type},
-      ${current.quantity}, ${type === 'count' ? current.quantity : newQty},
-      ${current.physical_quantity ?? null}, ${type === 'count' ? newPhysical : current.physical_quantity ?? null},
+      ${current.quantity}, ${newQty},
+      ${current.physical_quantity ?? null}, ${newPhysical},
       ${type === 'add' ? amount : type === 'subtract' ? -amount : type === 'set_system' ? newQty - current.quantity : null},
-      ${opts?.notes ?? null}, ${opts?.changed_by ?? null}
+      ${opts?.notes ?? null}, ${opts?.taken_by ?? opts?.changed_by ?? null}
     )
   `;
 
