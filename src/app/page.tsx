@@ -188,19 +188,24 @@ export default function HomePage() {
             { left: '60%', top: '87%', size: 44, delay: 0.40, twist:  '-8deg' },
             { left: '78%', top: '89%', size: 48, delay: 0.48, twist:  '20deg' },
           ] as { left: string; top: string; size: number; delay: number; twist: string }[]).map((b, i) => (
-            <span
+            /* outer div: static position + rotation — never animated */
+            <div
               key={i}
-              className="sbox"
               style={{
+                position: 'absolute',
                 left: b.left,
                 top: b.top,
                 fontSize: b.size,
-                animationDelay: `${b.delay}s`,
-                '--twist': b.twist,
-              } as React.CSSProperties}
+                lineHeight: 1,
+                userSelect: 'none',
+                transform: `rotate(${b.twist})`,
+              }}
             >
-              📦
-            </span>
+              {/* inner span: translateY animation only — no CSS custom props */}
+              <span style={{ display: 'block', animation: `splash-fall 1s ease-in ${b.delay}s both` }}>
+                📦
+              </span>
+            </div>
           ))}
 
           {/* Title fades in while boxes are mid-fall */}
