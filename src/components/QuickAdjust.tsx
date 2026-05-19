@@ -39,6 +39,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
   const [saving, setSaving] = useState(false);
   const [confirmNegative, setConfirmNegative] = useState(false);
   const [newLocation, setNewLocation] = useState('');
+  const [transferQty, setTransferQty] = useState(1);
 
   useEffect(() => {
     if (item) {
@@ -48,6 +49,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
       setBroughtBy('');
       setNotes('');
       setNewLocation('');
+      setTransferQty(item.quantity ?? 1);
     }
   }, [item?.id]);
 
@@ -57,6 +59,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
     setTakenBy('');
     setBroughtBy('');
     setNewLocation('');
+    if (t === 'move' && item) setTransferQty(item.quantity ?? 1);
     if (item && t !== 'move') setAmount(defaultAmount(t, item));
   };
 
@@ -89,10 +92,13 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
     try {
       let res: Response;
       if (type === 'move') {
+        const body = item.location
+          ? { location: newLocation, qty: transferQty }
+          : { location: newLocation || null };
         res = await fetch(`/api/stock/${item.id}/move`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ location: newLocation || null }),
+          body: JSON.stringify(body),
         });
       } else {
         res = await fetch(`/api/stock/${item.id}/adjust`, {
@@ -226,48 +232,103 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
           )}
 
           {type === 'move' && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {item.location ? (
-                <p className="text-xs text-gray-500">
-                  Current location: <strong className="text-gray-300">{item.location}</strong>
-                </p>
-              ) : (
-                <div className="flex items-start gap-2 rounded-lg bg-amber-500/8 border border-amber-500/20 px-3 py-2">
-                  <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-300">This item has no location set. Select an existing location or type a new one.</p>
-                </div>
-              )}
-              <label className="text-xs font-medium text-indigo-400 block">
-                {item.location ? 'Move to' : 'Set location'}
-              </label>
-              <input
-                type="text"
-                value={newLocation}
-                onChange={(e) => setNewLocation(e.target.value)}
-                placeholder={item.location ? 'Type or tap a suggestion…' : 'e.g. Warehouse A'}
-                style={{ fontSize: '16px' }}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
-              />
-              {(() => {
-                const suggestions = (locations ?? []).filter(l =>
-                  l !== item.location &&
-                  l.toLowerCase().includes(newLocation.toLowerCase().trim())
-                );
-                return suggestions.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
-                    {suggestions.map(loc => (
-                      <button
-                        key={loc}
-                        type="button"
-                        onClick={() => setNewLocation(loc)}
-                        className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 active:bg-indigo-500/30 transition-colors"
-                      >
-                        {loc}
-                      </button>
-                    ))}
+                <>
+                  <div className="rounded-lg bg-indigo-500/8 border border-indigo-500/20 px-3 py-2">
+                    <p className="text-xs text-indigo-300">
+                      Transferring from <strong>{item.location}</strong> · {item.quantity} unit{item.quantity !== 1 ? 's' : ''} available
+                    </p>
                   </div>
-                ) : null;
-              })()}
+                  <div>
+                    <label className="text-xs font-medium text-indigo-400 block mb-1.5">Units to transfer</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setTransferQty(q => Math.max(1, q - 1))}
+                        className="w-11 h-11 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center text-gray-300 hover:bg-white/15 active:scale-95 transition-all text-xl font-bold shrink-0"
+                      >−</button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={item.quantity}
+                        value={transferQty}
+                        onChange={(e) => setTransferQty(Math.max(1, Math.min(item.quantity, parseInt(e.target.value) || 1)))}
+                        style={{ fontSize: '24px' }}
+                        className="flex-1 text-center font-bold bg-white/5 border border-white/10 rounded-xl py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setTransferQty(q => Math.min(item.quantity, q + 1))}
+                        className="w-11 h-11 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center text-gray-300 hover:bg-white/15 active:scale-95 transition-all text-xl font-bold shrink-0"
+                      >+</button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTransferQty(item.quantity)}
+                      className="mt-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >Transfer all {item.quantity}</button>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-indigo-400 block mb-1.5">Transfer to location</label>
+                    <input
+                      type="text"
+                      value={newLocation}
+                      onChange={(e) => setNewLocation(e.target.value)}
+                      placeholder="Type or tap a suggestion…"
+                      style={{ fontSize: '16px' }}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
+                    />
+                    {(() => {
+                      const suggestions = (locations ?? []).filter(l =>
+                        l !== item.location &&
+                        l.toLowerCase().includes(newLocation.toLowerCase().trim())
+                      );
+                      return suggestions.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 pt-1.5">
+                          {suggestions.map(loc => (
+                            <button key={loc} type="button" onClick={() => setNewLocation(loc)}
+                              className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 active:bg-indigo-500/30 transition-colors">
+                              {loc}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-start gap-2 rounded-lg bg-amber-500/8 border border-amber-500/20 px-3 py-2">
+                    <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-300">This item has no location set. Select an existing location or type a new one.</p>
+                  </div>
+                  <label className="text-xs font-medium text-indigo-400 block">Set location</label>
+                  <input
+                    type="text"
+                    value={newLocation}
+                    onChange={(e) => setNewLocation(e.target.value)}
+                    placeholder="e.g. Warehouse A"
+                    style={{ fontSize: '16px' }}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
+                  />
+                  {(() => {
+                    const suggestions = (locations ?? []).filter(l =>
+                      l.toLowerCase().includes(newLocation.toLowerCase().trim())
+                    );
+                    return suggestions.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {suggestions.map(loc => (
+                          <button key={loc} type="button" onClick={() => setNewLocation(loc)}
+                            className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 active:bg-indigo-500/30 transition-colors">
+                            {loc}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                </>
+              )}
             </div>
           )}
 
@@ -389,9 +450,9 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
               size="lg"
               variant={type === 'subtract' ? 'destructive' : type === 'add' ? 'success' : 'default'}
               onClick={wouldGoNegative && !confirmNegative ? () => setConfirmNegative(false) : submit}
-              disabled={saving || (type === 'subtract' && !takenBy.trim()) || (type === 'move' && (!newLocation.trim() || newLocation.trim() === item.location))}
+              disabled={saving || (type === 'subtract' && !takenBy.trim()) || (type === 'move' && (!newLocation.trim() || newLocation.trim() === item.location || (!!item.location && (transferQty < 1 || transferQty > item.quantity))))}
             >
-              {saving ? 'Saving…' : type === 'move' && !item.location ? 'Set Location' : `Confirm ${activeType.label}`}
+              {saving ? 'Saving…' : type === 'move' ? (item.location ? `Transfer ${transferQty} unit${transferQty !== 1 ? 's' : ''}` : 'Set Location') : `Confirm ${activeType.label}`}
             </Button>
           )}
           {type === 'subtract' && !takenBy.trim() && (

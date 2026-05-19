@@ -118,6 +118,7 @@ function mapRow(row: Record<string, unknown>): StockItem {
     location: row.location ? String(row.location) : null,
     rack_number: row.rack_number ? String(row.rack_number) : undefined,
     quantity: qty,
+    location_total: row.location_total != null ? Number(row.location_total) : undefined,
     physical_quantity: physQty,
     quantity_mismatch: physQty !== null && physQty !== qty,
     mismatch_type: physQty === null ? null : physQty < qty ? 'missing' : physQty > qty ? 'excess' : null,
@@ -209,7 +210,7 @@ export async function getStockItems(filters: Partial<StockFilters> = {}): Promis
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const query = `SELECT * FROM stock_items ${where} ORDER BY created_at DESC`;
+  const query = `SELECT *, SUM(quantity) OVER (PARTITION BY stock_number) AS location_total FROM stock_items ${where} ORDER BY created_at DESC`;
 
   const result = await sql.query(query, values);
   return result.rows.map(mapRow);
@@ -626,4 +627,74 @@ export async function getDistinctValues(field: 'category' | 'location' | 'rack_n
     []
   );
   return result.rows.map((r) => String(r[field]));
+}
+
+export async function transferStockBetweenLocations(
+  sourceId: string,
+  targetLocation: string,
+  qty: number,
+  changedBy?: string
+): Promise<{ source: StockItem; target: StockItem }> {
+  const source = await getStockItem(sourceId);
+  if (!source) throw new Error('Item not found');
+  if (!Number.isInteger(qty) || qty <= 0) throw new Error('Transfer quantity must be a positive whole number');
+  if (qty > source.quantity) throw new Error(`Only ${source.quantity} unit${source.quantity === 1 ? '' : 's'} available at this location`);
+
+  const sourceQtyAfter = source.quantity - qty;
+  const calcStatus = (q: number) => q === 0 ? 'out-of-stock' : q <= 5 ? 'low-stock' : 'in-stock';
+
+  const sourceResult = await sql`
+    UPDATE stock_items
+    SET quantity = ${sourceQtyAfter}, status = ${calcStatus(sourceQtyAfter)}, updated_at = NOW()
+    WHERE id = ${sourceId}
+    RETURNING *
+  `;
+
+  const existingResult = await sql`
+    SELECT * FROM stock_items
+    WHERE stock_number = ${source.stock_number} AND location = ${targetLocation}
+    LIMIT 1
+  `;
+
+  let targetQtyBefore: number;
+  let targetItem: StockItem;
+
+  if (existingResult.rows.length > 0) {
+    const existing = mapRow(existingResult.rows[0]);
+    targetQtyBefore = existing.quantity;
+    const targetQtyAfter = existing.quantity + qty;
+    const targetResult = await sql`
+      UPDATE stock_items
+      SET quantity = ${targetQtyAfter}, status = ${calcStatus(targetQtyAfter)}, updated_at = NOW()
+      WHERE id = ${existing.id}
+      RETURNING *
+    `;
+    targetItem = mapRow(targetResult.rows[0]);
+  } else {
+    targetQtyBefore = 0;
+    const targetQtyAfter = qty;
+    const targetResult = await sql`
+      INSERT INTO stock_items (
+        stock_number, name, description, category, location, rack_number,
+        quantity, status, date_added, stored_by
+      ) VALUES (
+        ${source.stock_number}, ${source.name}, ${source.description ?? null},
+        ${source.category ?? null}, ${targetLocation}, ${source.rack_number ?? null},
+        ${targetQtyAfter}, ${calcStatus(targetQtyAfter)}, CURRENT_DATE, ${changedBy ?? null}
+      )
+      RETURNING *
+    `;
+    targetItem = mapRow(targetResult.rows[0]);
+  }
+
+  await sql`
+    INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, delta, notes, changed_by)
+    VALUES (${sourceId}, ${source.stock_number}, 'transfer_out', ${source.quantity}, ${sourceQtyAfter}, ${-qty}, ${'To: ' + targetLocation}, ${changedBy ?? null})
+  `;
+  await sql`
+    INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, delta, notes, changed_by)
+    VALUES (${targetItem.id}, ${source.stock_number}, 'transfer_in', ${targetQtyBefore}, ${targetItem.quantity}, ${qty}, ${'From: ' + (source.location ?? '(no location)')}, ${changedBy ?? null})
+  `;
+
+  return { source: mapRow(sourceResult.rows[0]), target: targetItem };
 }

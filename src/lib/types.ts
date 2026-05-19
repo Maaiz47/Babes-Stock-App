@@ -9,6 +9,7 @@ export interface StockItem {
   location?: string | null;
   rack_number?: string;
   quantity: number;
+  location_total?: number;   // ← add this line
   physical_quantity?: number | null;
   quantity_mismatch: boolean;
   mismatch_type: 'excess' | 'missing' | null;

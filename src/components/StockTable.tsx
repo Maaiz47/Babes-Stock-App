@@ -207,14 +207,21 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                   <td className="px-3 py-3 text-gray-400 text-xs hidden md:table-cell">{item.category || '—'}</td>
                   <td className="px-3 py-3 hidden md:table-cell">
                     <div className="flex flex-col gap-0.5">
-                      {item.location && (
+                      {item.location ? (
                         <span className="inline-flex items-center gap-1 text-xs text-violet-300">
                           <Building2 size={10} className="text-violet-500 shrink-0" />{item.location}
+                          {item.location_total != null && item.location_total !== item.quantity && (
+                            <span className="text-gray-500 ml-1">{item.quantity}/{item.location_total} total</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-amber-500/70" title="No location assigned">
+                          <AlertTriangle size={10} className="shrink-0" />no location
                         </span>
                       )}
-                      {item.rack_number
-                        ? <span className="inline-flex items-center gap-1 text-xs text-gray-400"><MapPin size={10} className="text-gray-600 shrink-0" />{item.rack_number}</span>
-                        : !item.location && <span className="text-gray-600">—</span>}
+                      {item.rack_number && (
+                        <span className="inline-flex items-center gap-1 text-xs text-gray-400"><MapPin size={10} className="text-gray-600 shrink-0" />{item.rack_number}</span>
+                      )}
                     </div>
                   </td>
                   <td className="px-3 py-3">
