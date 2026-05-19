@@ -110,7 +110,7 @@ export function FilterPanel({ filters, onChange, categories, locations, racks }:
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Stored By</label>
               <Input placeholder="Name…" value={filters.stored_by} onChange={(e) => set('stored_by', e.target.value)} />

@@ -103,7 +103,7 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-[#080810]">
       <header className="sticky top-0 z-30 border-b border-white/8 bg-[#080810]/80 backdrop-blur-xl">
-        <div className="max-w-lg mx-auto px-6 py-4 flex items-center gap-3">
+        <div className="max-w-lg mx-auto px-4 sm:px-6 py-4 flex items-center gap-3">
           <button onClick={() => router.push('/')} className="p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-white/8 transition-colors">
             <ArrowLeft size={16} />
           </button>
@@ -116,7 +116,7 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-6 py-8 space-y-4">
+      <main className="max-w-lg mx-auto px-4 sm:px-6 py-8 space-y-4">
         {user && (
           <div className="bg-white/4 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-violet-300 font-bold text-sm">

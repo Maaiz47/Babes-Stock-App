@@ -223,7 +223,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
+      <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-5">
         {/* Stats row */}
         {(() => {
           const statCards = [

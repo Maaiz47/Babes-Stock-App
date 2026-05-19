@@ -201,7 +201,7 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                       {item.mismatch_type === 'excess' && <TrendingUp size={13} className="text-teal-400 shrink-0" />}
                     </div>
                     {item.description && (
-                      <p className="text-xs text-gray-500 truncate max-w-xs mt-0.5">{item.description}</p>
+                      <p className="text-xs text-gray-500 truncate max-w-[160px] sm:max-w-xs mt-0.5">{item.description}</p>
                     )}
                   </td>
                   <td className="px-3 py-3 text-gray-400 text-xs hidden md:table-cell">{item.category || '—'}</td>

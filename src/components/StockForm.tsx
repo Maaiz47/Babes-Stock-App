@@ -167,7 +167,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
       size="2xl"
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Stock Number *" error={errors.stock_number?.message}>
             <div className="flex gap-2">
               <Input {...register('stock_number')} placeholder="STK-001" className="flex-1" />
@@ -192,18 +192,18 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
             {...register('description')}
             placeholder="Optional description"
             rows={2}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-colors resize-none"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-base sm:text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-colors resize-none"
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Location" hint="Warehouse or office where this item is stored">
             <input
               type="text"
               list="locations-list"
               {...register('location')}
               placeholder="e.g. Warehouse A"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-colors"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-base sm:text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-colors"
             />
             <datalist id="locations-list">
               {locations.map(l => <option key={l} value={l} />)}
@@ -214,7 +214,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
           </Field>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Rack Number">
             <Input {...register('rack_number')} placeholder="e.g. A-12" />
           </Field>
@@ -228,7 +228,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
           </Field>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="System Quantity *" hint="Official record count · adjust via +/− quick action on the table" error={errors.quantity?.message}>
             <Input type="number" min={0} {...register('quantity')} />
           </Field>
@@ -242,7 +242,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
           </Field>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Date Added *" error={errors.date_added?.message}>
             <Input type="date" {...register('date_added')} />
           </Field>
@@ -251,7 +251,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
           </Field>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Received By" hint="Who signed for or took physical delivery of this item">
             <Input {...register('received_by')} placeholder="Name" />
           </Field>
@@ -267,7 +267,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
             {...register('notes')}
             placeholder="Any additional notes"
             rows={2}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-colors resize-none"
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-base sm:text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-colors resize-none"
           />
         </Field>
 
