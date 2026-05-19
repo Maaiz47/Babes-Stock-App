@@ -160,17 +160,18 @@ export default function HomePage() {
     <div className="min-h-screen bg-[#080810]">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-white/8 bg-[#080810]/80 backdrop-blur-xl">
-        <div className="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
               <Package size={16} className="text-white" />
             </div>
-            <div>
-              <h1 className="text-base font-semibold text-white leading-none">Babes Stock</h1>
+            <div className="hidden xs:block sm:block">
+              <h1 className="text-sm font-semibold text-white leading-none">Babes Stock</h1>
               <p className="text-[10px] text-gray-500 leading-none mt-0.5">Inventory Manager</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            {/* Desktop: username + admin text button */}
             {currentUser && (
               <div className="hidden sm:flex items-center gap-2 mr-1">
                 <button
@@ -187,30 +188,36 @@ export default function HomePage() {
                 )}
               </div>
             )}
+            {/* Mobile: admin shield icon */}
+            {currentUser?.isAdmin && (
+              <Button variant="ghost" size="icon" className="sm:hidden" onClick={() => router.push('/admin')} title="Admin Panel">
+                <Shield size={15} className="text-violet-400" />
+              </Button>
+            )}
             <Button variant="ghost" size="icon" onClick={() => setTutorialOpen(true)} title="Help & Tutorial">
               <HelpCircle size={15} />
             </Button>
             <Button variant="ghost" size="icon" onClick={refresh} title="Refresh">
               <RefreshCw size={15} />
             </Button>
-            <Button
-              variant="ghost" size="icon"
-              title="Log out"
+            <Button variant="ghost" size="icon" title="Log out"
               onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); router.push('/login'); }}
             >
               <LogOut size={15} />
             </Button>
             <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-              <Upload size={14} /> Import
+              <Upload size={14} />
+              <span className="hidden sm:inline">Import</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setCountSheetOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => setCountSheetOpen(true)} className="hidden sm:flex">
               <ClipboardList size={14} /> Count Sheet
             </Button>
-            <Button variant="outline" size="sm" onClick={exportAll}>
+            <Button variant="outline" size="sm" onClick={exportAll} className="hidden sm:flex">
               <Archive size={14} /> Export All
             </Button>
             <Button size="sm" onClick={() => { setEditItem(null); setTemplateItem(null); setFormOpen(true); }}>
-              <Plus size={14} /> Add Item
+              <Plus size={14} />
+              <span className="hidden sm:inline">Add Item</span>
             </Button>
           </div>
         </div>
@@ -218,30 +225,36 @@ export default function HomePage() {
 
       <main className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
         {/* Stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {[
+        {(() => {
+          const statCards = [
             { label: 'All Items', value: totalCount ?? stats.total, icon: Package, color: 'text-gray-400', onClick: () => setFilters(EMPTY_FILTERS), active: !isFiltered },
             { label: 'In Stock', value: stats.inStock, icon: Package, color: 'text-emerald-400', onClick: () => setStatFilter({ status: 'in-stock' }), active: filters.status === 'in-stock' && !filters.mismatch_only && !filters.mismatch_type },
             { label: 'Low Stock', value: stats.lowStock, icon: TrendingDown, color: 'text-amber-400', onClick: () => setStatFilter({ status: 'low-stock' }), active: filters.status === 'low-stock' && !filters.mismatch_type },
             { label: 'Missing', value: stats.missing, icon: AlertTriangle, color: 'text-red-400', onClick: () => setStatFilter({ mismatch_type: 'missing' }), active: filters.mismatch_type === 'missing' },
             { label: 'Excess', value: stats.excess, icon: TrendingUp, color: 'text-teal-400', onClick: () => setStatFilter({ mismatch_type: 'excess' }), active: filters.mismatch_type === 'excess' },
-          ].map(({ label, value, icon: Icon, color, onClick, active }) => (
-            <button
-              key={label}
-              onClick={onClick}
-              className={cn(
-                'text-left bg-white/3 border rounded-xl px-4 py-3 transition-colors hover:bg-white/6 active:bg-white/8',
-                active ? 'border-violet-500/40 bg-violet-500/8' : 'border-white/8'
-              )}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-500">{label}</span>
-                <Icon size={14} className={color} />
-              </div>
-              <p className="text-2xl font-bold text-white">{value}</p>
-            </button>
-          ))}
-        </div>
+          ];
+          return (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {statCards.map(({ label, value, icon: Icon, color, onClick, active }, i) => (
+              <button
+                key={label}
+                onClick={onClick}
+                className={cn(
+                  'text-left bg-white/3 border rounded-xl px-4 py-3 transition-colors hover:bg-white/6 active:bg-white/8',
+                  active ? 'border-violet-500/40 bg-violet-500/8' : 'border-white/8',
+                  i === statCards.length - 1 && statCards.length % 2 !== 0 && 'col-span-2 md:col-span-1'
+                )}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-gray-500">{label}</span>
+                  <Icon size={14} className={color} />
+                </div>
+                <p className="text-2xl font-bold text-white">{value}</p>
+              </button>
+            ))}
+          </div>
+          );
+        })()}
 
         {/* Search + Filters */}
         <div className="flex gap-3">
