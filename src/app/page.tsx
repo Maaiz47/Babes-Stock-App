@@ -175,33 +175,41 @@ export default function HomePage() {
         )}>
           <style>{`
             @keyframes splash-drop {
-              0%   { transform: translateY(-680px) rotate(var(--twist)); }
-              65%  { transform: translateY(0px) rotate(calc(var(--twist) * 0.15)); animation-timing-function: ease-out; }
-              74%  { transform: translateY(-28px) rotate(calc(var(--twist) * -0.1)); animation-timing-function: ease-in; }
-              84%  { transform: translateY(0px) rotate(calc(var(--twist) * 0.05)); animation-timing-function: ease-out; }
-              90%  { transform: translateY(-9px) rotate(0deg); animation-timing-function: ease-in; }
-              96%  { transform: translateY(0px) rotate(0deg); }
-              98%  { transform: translateY(-2px) rotate(0deg); }
-              100% { transform: translateY(0px) rotate(0deg); }
+              0%   { transform: translateY(-110vh) rotate(calc(var(--twist) * 0.4)); }
+              70%  { transform: translateY(0) rotate(var(--twist)); animation-timing-function: ease-out; }
+              77%  { transform: translateY(-26px) rotate(calc(var(--twist) * 1.12)); animation-timing-function: ease-in; }
+              85%  { transform: translateY(0) rotate(var(--twist)); animation-timing-function: ease-out; }
+              90%  { transform: translateY(-9px) rotate(calc(var(--twist) * 0.95)); animation-timing-function: ease-in; }
+              95%  { transform: translateY(0) rotate(var(--twist)); }
+              98%  { transform: translateY(-2px) rotate(var(--twist)); }
+              100% { transform: translateY(0) rotate(var(--twist)); }
+            }
+            @keyframes splash-fade-up {
+              from { opacity: 0; transform: translateY(10px); }
+              to   { opacity: 1; transform: translateY(0); }
             }
             .sbox {
               position: absolute;
               user-select: none;
               line-height: 1;
-              animation: splash-drop 0.8s ease-in both;
+              animation: splash-drop 1s ease-in both;
             }
           `}</style>
 
           {([
-            { left: '6%',  top: '22%', size: 52, delay: 0,    twist: '-11deg' },
-            { left: '23%', top: '20%', size: 60, delay: 0.13, twist:  '8deg'  },
-            { left: '44%', top: '23%', size: 44, delay: 0.05, twist: '-6deg'  },
-            { left: '63%', top: '21%', size: 56, delay: 0.21, twist: '13deg'  },
-            { left: '82%', top: '19%', size: 40, delay: 0.09, twist: '-9deg'  },
-            { left: '14%', top: '48%', size: 56, delay: 0.30, twist:  '9deg'  },
-            { left: '35%', top: '46%', size: 64, delay: 0.19, twist: '-12deg' },
-            { left: '57%', top: '49%', size: 48, delay: 0.37, twist:  '7deg'  },
-            { left: '76%', top: '47%', size: 52, delay: 0.25, twist: '-5deg'  },
+            { left:  '1%', top: '76%', size: 60, delay: 0.04, twist: '-23deg' },
+            { left: '13%', top: '80%', size: 48, delay: 0.19, twist:  '18deg' },
+            { left: '25%', top: '74%', size: 64, delay: 0,    twist:  '-9deg' },
+            { left: '38%', top: '78%', size: 52, delay: 0.14, twist:  '28deg' },
+            { left: '51%', top: '75%', size: 56, delay: 0.06, twist: '-17deg' },
+            { left: '63%', top: '79%', size: 44, delay: 0.25, twist:  '15deg' },
+            { left: '75%', top: '76%', size: 60, delay: 0.10, twist: '-31deg' },
+            { left: '87%', top: '73%', size: 44, delay: 0.29, twist:  '22deg' },
+            { left:  '6%', top: '88%', size: 52, delay: 0.36, twist:  '12deg' },
+            { left: '22%', top: '86%', size: 40, delay: 0.44, twist: '-19deg' },
+            { left: '42%', top: '90%', size: 56, delay: 0.32, twist:  '26deg' },
+            { left: '60%', top: '87%', size: 44, delay: 0.40, twist:  '-8deg' },
+            { left: '78%', top: '89%', size: 48, delay: 0.48, twist:  '20deg' },
           ] as { left: string; top: string; size: number; delay: number; twist: string }[]).map((b, i) => (
             <span
               key={i}
@@ -218,12 +226,15 @@ export default function HomePage() {
             </span>
           ))}
 
-          <div className="absolute bottom-14 left-0 right-0 flex flex-col items-center gap-2">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-xl shadow-violet-500/40">
-              <Package size={22} className="text-white" />
+          {/* Title fades in while boxes are mid-fall */}
+          <div className="absolute inset-x-0 flex justify-center" style={{ top: '35%', transform: 'translateY(-50%)' }}>
+            <div className="flex flex-col items-center gap-2" style={{ animation: 'splash-fade-up 0.5s ease-out 0.3s both' }}>
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-2xl shadow-violet-500/40">
+                <Package size={26} className="text-white" />
+              </div>
+              <h1 className="text-2xl font-bold text-white">Babes Stock</h1>
+              <p className="text-sm text-gray-500">Inventory Manager</p>
             </div>
-            <h1 className="text-xl font-bold text-white mt-1">Babes Stock</h1>
-            <p className="text-sm text-gray-500">Inventory Manager</p>
           </div>
         </div>
       )}
