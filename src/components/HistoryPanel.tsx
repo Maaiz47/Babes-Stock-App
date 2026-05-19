@@ -92,7 +92,10 @@ export function HistoryPanel({ itemId }: { itemId: string }) {
                   )}
                   {h.notes && <p className="text-gray-500 mt-0.5 truncate">{h.notes}</p>}
                 </div>
-                <span className="text-[10px] text-gray-600 shrink-0 mt-0.5">{formatRelative(h.created_at)}</span>
+                <div className="text-right shrink-0 mt-0.5 space-y-0.5">
+                  <p className="text-[10px] text-gray-600">{formatRelative(h.created_at)}</p>
+                  {h.changed_by && <p className="text-[10px] text-violet-500/70">by {h.changed_by}</p>}
+                </div>
               </div>
             );
           })}

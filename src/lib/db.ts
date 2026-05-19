@@ -219,7 +219,7 @@ export async function getStockItem(id: string): Promise<StockItem | null> {
   return mapRow(result.rows[0]);
 }
 
-export async function createStockItem(input: StockItemInput): Promise<StockItem> {
+export async function createStockItem(input: StockItemInput, changedBy?: string): Promise<StockItem> {
   const result = await sql`
     INSERT INTO stock_items (
       stock_number, name, description, category, location, rack_number,
@@ -235,10 +235,15 @@ export async function createStockItem(input: StockItemInput): Promise<StockItem>
     )
     RETURNING *
   `;
-  return mapRow(result.rows[0]);
+  const item = mapRow(result.rows[0]);
+  await sql`
+    INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, physical_before, physical_after, delta, notes, changed_by)
+    VALUES (${item.id}, ${item.stock_number}, 'create', 0, ${item.quantity}, null, ${item.physical_quantity ?? null}, ${item.quantity}, null, ${changedBy ?? null})
+  `;
+  return item;
 }
 
-export async function updateStockItem(id: string, input: Partial<StockItemInput>): Promise<StockItem> {
+export async function updateStockItem(id: string, input: Partial<StockItemInput>, changedBy?: string): Promise<StockItem> {
   const fields: string[] = [];
   const values: unknown[] = [];
   let idx = 1;
@@ -262,30 +267,53 @@ export async function updateStockItem(id: string, input: Partial<StockItemInput>
 
   const query = `UPDATE stock_items SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`;
   const result = await sql.query(query, values);
-  return mapRow(result.rows[0]);
+  const item = mapRow(result.rows[0]);
+  await sql`
+    INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
+    VALUES (${id}, ${item.stock_number}, 'edit', ${'quantity' in input ? null : item.quantity}, ${item.quantity}, 'Item details edited', ${changedBy ?? null})
+  `;
+  return item;
 }
 
-export async function deleteStockItem(id: string): Promise<void> {
+export async function deleteStockItem(id: string, changedBy?: string): Promise<void> {
+  const item = await getStockItem(id);
+  if (item) {
+    await sql`
+      INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, delta, notes, changed_by)
+      VALUES (${id}, ${item.stock_number}, 'delete', ${item.quantity}, 0, ${-item.quantity}, 'Item deleted', ${changedBy ?? null})
+    `;
+  }
   await sql`DELETE FROM stock_items WHERE id = ${id}`;
 }
 
-export async function bulkAction(payload: BulkActionPayload): Promise<{ affected: number }> {
+export async function bulkAction(payload: BulkActionPayload, changedBy?: string): Promise<{ affected: number }> {
   const placeholders = payload.ids.map((_, i) => `$${i + 1}`).join(', ');
 
   if (payload.action === 'delete') {
-    const result = await sql.query(
-      `DELETE FROM stock_items WHERE id IN (${placeholders})`,
-      payload.ids
-    );
+    const items = await sql.query(`SELECT id, stock_number, quantity FROM stock_items WHERE id IN (${placeholders})`, payload.ids);
+    for (const row of items.rows) {
+      await sql`
+        INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, delta, notes, changed_by)
+        VALUES (${String(row.id)}, ${String(row.stock_number)}, 'delete', ${Number(row.quantity)}, 0, ${-Number(row.quantity)}, 'Bulk deleted', ${changedBy ?? null})
+      `;
+    }
+    const result = await sql.query(`DELETE FROM stock_items WHERE id IN (${placeholders})`, payload.ids);
     return { affected: result.rowCount ?? 0 };
   }
 
   if (payload.action === 'update_status' && payload.data?.status) {
+    const items = await sql.query(`SELECT id, stock_number, quantity FROM stock_items WHERE id IN (${placeholders})`, payload.ids);
     const values: unknown[] = [...payload.ids, payload.data.status];
     const result = await sql.query(
       `UPDATE stock_items SET status = $${payload.ids.length + 1}, updated_at = NOW() WHERE id IN (${placeholders})`,
       values
     );
+    for (const row of items.rows) {
+      await sql`
+        INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
+        VALUES (${String(row.id)}, ${String(row.stock_number)}, 'edit', ${Number(row.quantity)}, ${Number(row.quantity)}, ${`Status → ${payload.data.status}`}, ${changedBy ?? null})
+      `;
+    }
     return { affected: result.rowCount ?? 0 };
   }
 
@@ -305,7 +333,8 @@ export type ImportMode = 'general' | 'count' | 'release';
 
 export async function bulkCreateStockItems(
   items: StockItemInput[],
-  mode: ImportMode = 'general'
+  mode: ImportMode = 'general',
+  changedBy?: string
 ): Promise<{ created: number; errors: string[] }> {
   let created = 0;
   const errors: string[] = [];
@@ -314,7 +343,7 @@ export async function bulkCreateStockItems(
     try {
       if (mode === 'count') {
         const physQty = item.physical_quantity ?? item.quantity;
-        await sql`
+        const upserted = await sql`
           INSERT INTO stock_items (
             stock_number, name, description, category, location, rack_number,
             quantity, physical_quantity, status, date_added, stored_by, notes
@@ -327,9 +356,17 @@ export async function bulkCreateStockItems(
           ON CONFLICT (stock_number) DO UPDATE SET
             physical_quantity = ${physQty},
             updated_at = NOW()
+          RETURNING id, stock_number, quantity, physical_quantity
         `;
+        if (upserted.rows[0]) {
+          const r = upserted.rows[0];
+          await sql`
+            INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, physical_before, physical_after, notes, changed_by)
+            VALUES (${String(r.id)}, ${String(r.stock_number)}, 'count', ${Number(r.quantity)}, ${Number(r.quantity)}, null, ${physQty}, 'Imported count', ${changedBy ?? null})
+          `;
+        }
       } else if (mode === 'release') {
-        await sql`
+        const upserted = await sql`
           INSERT INTO stock_items (
             stock_number, name, description, category, location, rack_number,
             quantity, physical_quantity, status, date_added, date_removed,
@@ -350,9 +387,17 @@ export async function bulkCreateStockItems(
             received_by = EXCLUDED.received_by,
             notes = EXCLUDED.notes,
             updated_at = NOW()
+          RETURNING id, stock_number, quantity
         `;
+        if (upserted.rows[0]) {
+          const r = upserted.rows[0];
+          await sql`
+            INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
+            VALUES (${String(r.id)}, ${String(r.stock_number)}, 'subtract', null, ${Number(r.quantity)}, 'Imported release', ${changedBy ?? null})
+          `;
+        }
       } else {
-        await sql`
+        const upserted = await sql`
           INSERT INTO stock_items (
             stock_number, name, description, category, location, rack_number,
             quantity, physical_quantity, status, date_added, date_removed,
@@ -381,7 +426,15 @@ export async function bulkCreateStockItems(
             stored_by = EXCLUDED.stored_by,
             notes = EXCLUDED.notes,
             updated_at = NOW()
+          RETURNING id, stock_number, quantity
         `;
+        if (upserted.rows[0]) {
+          const r = upserted.rows[0];
+          await sql`
+            INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
+            VALUES (${String(r.id)}, ${String(r.stock_number)}, 'import', null, ${Number(r.quantity)}, 'General import', ${changedBy ?? null})
+          `;
+        }
       }
       created++;
     } catch (e) {
@@ -440,7 +493,7 @@ export async function adjustQuantity(
       ${current.quantity}, ${newQty},
       ${current.physical_quantity ?? null}, ${newPhysical},
       ${type === 'add' ? amount : type === 'subtract' ? -amount : type === 'set_system' ? newQty - current.quantity : null},
-      ${opts?.notes ?? null}, ${opts?.taken_by ?? opts?.changed_by ?? null}
+      ${opts?.notes ?? null}, ${opts?.changed_by ?? null}
     )
   `;
 
@@ -486,7 +539,8 @@ export async function getItemHistory(stockItemId: string): Promise<HistoryEntry[
 }
 
 export async function bulkPhysicalCount(
-  items: { id: string; physical_quantity: number }[]
+  items: { id: string; physical_quantity: number }[],
+  changedBy?: string
 ): Promise<{ updated: number; errors: string[] }> {
   let updated = 0;
   const errors: string[] = [];
@@ -498,8 +552,8 @@ export async function bulkPhysicalCount(
         UPDATE stock_items SET physical_quantity = ${physical_quantity}, updated_at = NOW() WHERE id = ${id}
       `;
       await sql`
-        INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, physical_before, physical_after, notes)
-        VALUES (${id}, ${current.stock_number}, 'count', ${current.quantity}, ${current.quantity}, ${current.physical_quantity ?? null}, ${physical_quantity}, 'Bulk count update')
+        INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, physical_before, physical_after, notes, changed_by)
+        VALUES (${id}, ${current.stock_number}, 'count', ${current.quantity}, ${current.quantity}, ${current.physical_quantity ?? null}, ${physical_quantity}, 'Bulk count update', ${changedBy ?? null})
       `;
       updated++;
     } catch (e) {

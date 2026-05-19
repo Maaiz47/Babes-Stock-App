@@ -237,9 +237,14 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                   </td>
                   <td className="px-3 py-3 text-xs text-gray-400 hidden sm:table-cell">{formatDate(item.date_added)}</td>
                   <td className="px-3 py-3 text-xs text-gray-400 hidden sm:table-cell">{formatDate(item.date_removed)}</td>
-                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-3 py-3"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
+                    onPointerMove={(e) => e.stopPropagation()}
+                  >
                     <div className="flex items-center gap-1 justify-end">
-                      <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); onEdit(item); }}>
+                      <Button variant="ghost" size="icon-sm" onClick={() => onEdit(item)}>
                         <Pencil size={13} />
                       </Button>
                       <Button
@@ -247,7 +252,7 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                         size="icon-sm"
                         className="text-gray-600 hover:text-violet-400 hover:bg-violet-500/10"
                         title="Duplicate item"
-                        onClick={(e) => { e.stopPropagation(); onDuplicate(item); }}
+                        onClick={() => onDuplicate(item)}
                       >
                         <Copy size={13} />
                       </Button>
@@ -255,7 +260,7 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                         variant="ghost"
                         size="icon-sm"
                         className="text-gray-600 hover:text-red-400 hover:bg-red-500/10"
-                        onClick={(e) => { e.stopPropagation(); setDeleteId(item.id); }}
+                        onClick={() => setDeleteId(item.id)}
                       >
                         <Trash2 size={13} />
                       </Button>

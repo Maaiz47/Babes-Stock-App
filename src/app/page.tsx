@@ -8,13 +8,14 @@ import { BulkActions } from '@/components/BulkActions';
 import { ImportModal } from '@/components/ImportModal';
 import { QuickAdjust } from '@/components/QuickAdjust';
 import { TutorialModal } from '@/components/TutorialModal';
+import { CountSheetModal } from '@/components/CountSheetModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import type { StockItem, StockFilters } from '@/lib/types';
 import {
   Plus, Upload, RefreshCw, Search, AlertTriangle,
-  Package, TrendingDown, Archive, HelpCircle, LogOut, Shield, User
+  Package, TrendingDown, Archive, HelpCircle, LogOut, Shield, User, ClipboardList
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatDate, STATUS_LABELS, cn } from '@/lib/utils';
@@ -44,6 +45,7 @@ export default function HomePage() {
   const [importOpen, setImportOpen] = useState(false);
   const [quickItem, setQuickItem] = useState<StockItem | null>(null);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [countSheetOpen, setCountSheetOpen] = useState(false);
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
@@ -196,6 +198,9 @@ export default function HomePage() {
             <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
               <Upload size={14} /> Import
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setCountSheetOpen(true)}>
+              <ClipboardList size={14} /> Count Sheet
+            </Button>
             <Button variant="outline" size="sm" onClick={exportAll}>
               <Archive size={14} /> Export All
             </Button>
@@ -310,6 +315,15 @@ export default function HomePage() {
       />
 
       <TutorialModal open={tutorialOpen} onClose={() => setTutorialOpen(false)} />
+
+      <CountSheetModal
+        open={countSheetOpen}
+        onClose={() => setCountSheetOpen(false)}
+        items={items}
+        locations={locations}
+        racks={racks}
+        categories={categories}
+      />
     </div>
   );
 }

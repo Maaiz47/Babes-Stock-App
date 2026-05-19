@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStockItems, createStockItem, getDistinctValues, getTotalCount } from '@/lib/db';
+import { getSession } from '@/lib/session';
 import type { StockFilters } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
@@ -41,8 +42,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getSession();
     const body = await req.json();
-    const item = await createStockItem(body);
+    const item = await createStockItem(body, session?.username ?? undefined);
     return NextResponse.json({ item }, { status: 201 });
   } catch (e) {
     console.error(e);

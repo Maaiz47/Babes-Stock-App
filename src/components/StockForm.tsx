@@ -6,9 +6,9 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select } from './ui/select';
 import { useToast } from './ui/toast';
-import { generateStockNumber, cn } from '@/lib/utils';
+import { generateStockNumber } from '@/lib/utils';
 import type { StockItem, StockItemInput, StockStatus } from '@/lib/types';
-import { Wand2 } from 'lucide-react';
+import { Wand2, Info } from 'lucide-react';
 import { HistoryPanel } from './HistoryPanel';
 
 interface FormData {
@@ -22,8 +22,6 @@ interface FormData {
   physical_quantity: string;
   status: StockStatus;
   date_added: string;
-  date_removed: string;
-  released_to: string;
   received_by: string;
   stored_by: string;
   notes: string;
@@ -45,7 +43,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
   const { error: toastError, success } = useToast();
   const [saving, setSaving] = useState(false);
 
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormData>({
     defaultValues: {
       stock_number: '',
       name: '',
@@ -57,8 +55,6 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
       physical_quantity: '',
       status: 'in-stock',
       date_added: today,
-      date_removed: '',
-      released_to: '',
       received_by: '',
       stored_by: '',
       notes: '',
@@ -79,8 +75,6 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
           physical_quantity: item.physical_quantity != null ? String(item.physical_quantity) : '',
           status: item.status,
           date_added: item.date_added,
-          date_removed: item.date_removed ?? '',
-          released_to: item.released_to ?? '',
           received_by: item.received_by ?? '',
           stored_by: item.stored_by ?? '',
           notes: item.notes ?? '',
@@ -96,9 +90,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
           quantity: '0',
           physical_quantity: '',
           status: template.status,
-          date_added: today,
-          date_removed: '',
-          released_to: '',
+          date_added: new Date().toISOString().split('T')[0],
           received_by: '',
           stored_by: template.stored_by ?? '',
           notes: template.notes ?? '',
@@ -114,9 +106,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
           quantity: '0',
           physical_quantity: '',
           status: 'in-stock',
-          date_added: today,
-          date_removed: '',
-          released_to: '',
+          date_added: new Date().toISOString().split('T')[0],
           received_by: '',
           stored_by: '',
           notes: '',
@@ -128,16 +118,17 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
     setSaving(true);
     try {
-      const payload: StockItemInput = {
-        ...data,
-        quantity: Number(data.quantity),
-        physical_quantity: data.physical_quantity != null ? Number(data.physical_quantity) : null,
+      const payload: Omit<StockItemInput, 'date_removed' | 'released_to'> & { date_removed?: null; released_to?: null } = {
+        stock_number: data.stock_number,
+        name: data.name,
         description: data.description || undefined,
         category: data.category || undefined,
         location: data.location || null,
         rack_number: data.rack_number || undefined,
-        date_removed: data.date_removed || null,
-        released_to: data.released_to || null,
+        quantity: Number(data.quantity),
+        physical_quantity: data.physical_quantity !== '' ? Number(data.physical_quantity) : null,
+        status: data.status,
+        date_added: data.date_added,
         received_by: data.received_by || null,
         stored_by: data.stored_by || null,
         notes: data.notes || null,
@@ -158,8 +149,6 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
       setSaving(false);
     }
   };
-
-  const status = watch('status');
 
   const Field = ({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) => (
     <div>
@@ -268,20 +257,9 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
           </Field>
         </div>
 
-        {/* Removal details — relevant when status is Removed */}
-        <div className={cn('rounded-xl border px-4 py-3 space-y-3 transition-colors', status === 'removed' ? 'border-amber-500/25 bg-amber-500/4' : 'border-white/6 bg-white/2 opacity-60')}>
-          <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">
-            Release / Removal details
-            {status !== 'removed' && <span className="ml-2 normal-case text-gray-600 font-normal">· auto-filled when you use Remove Stock action</span>}
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Date Removed" hint="When the item left inventory">
-              <Input type="date" {...register('date_removed')} />
-            </Field>
-            <Field label="Released To" hint="Who received or took this stock">
-              <Input {...register('released_to')} placeholder="Name" />
-            </Field>
-          </div>
+        <div className="flex items-start gap-2 rounded-lg bg-white/3 border border-white/8 px-3 py-2.5">
+          <Info size={13} className="text-gray-500 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-gray-500">Release &amp; removal details (date removed, released to) are recorded automatically when you use the <strong className="text-gray-400">Remove Stock</strong> action in Quick Adjust.</p>
         </div>
 
         <Field label="Notes">
