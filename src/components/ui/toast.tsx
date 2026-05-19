@@ -46,7 +46,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
     <div
       className={cn(
         'flex items-start gap-3 w-full max-w-sm rounded-xl border px-4 py-3 shadow-xl shadow-black/40',
-        'bg-gray-900 backdrop-blur-xl animate-in slide-in-from-bottom-2 fade-in-0 duration-200',
+        'bg-gray-900 animate-in slide-in-from-bottom-2 fade-in-0 duration-200',
         colors[toast.type]
       )}
     >
@@ -55,7 +55,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
         <p className="text-sm font-medium text-white">{toast.title}</p>
         {toast.description && <p className="mt-0.5 text-xs text-gray-400">{toast.description}</p>}
       </div>
-      <button onClick={() => onRemove(toast.id)} className="text-gray-500 hover:text-gray-300 transition-colors shrink-0">
+      <button type="button" onClick={() => onRemove(toast.id)} className="text-gray-500 hover:text-gray-300 transition-colors shrink-0">
         <X size={14} />
       </button>
     </div>

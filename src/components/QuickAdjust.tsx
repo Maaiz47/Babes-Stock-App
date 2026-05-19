@@ -123,7 +123,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-black/60" onClick={onClose} />
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
