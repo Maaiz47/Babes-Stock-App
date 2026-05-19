@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getStockItems, createStockItem, getDistinctValues } from '@/lib/db';
+import { getStockItems, createStockItem, getDistinctValues, getTotalCount } from '@/lib/db';
 import type { StockFilters } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
@@ -20,8 +20,13 @@ export async function GET(req: NextRequest) {
       mismatch_only: p.get('mismatch_only') === 'true',
     };
 
+    if (p.get('count') === 'true') {
+      const count = await getTotalCount();
+      return NextResponse.json({ count });
+    }
+
     if (p.get('distinct')) {
-      const field = p.get('distinct') as 'category' | 'rack_number' | 'stored_by' | 'released_to' | 'received_by';
+      const field = p.get('distinct') as 'category' | 'location' | 'rack_number' | 'stored_by' | 'released_to' | 'received_by';
       const values = await getDistinctValues(field);
       return NextResponse.json({ values });
     }

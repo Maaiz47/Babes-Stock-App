@@ -162,6 +162,11 @@ export async function getStockItems(filters: Partial<StockFilters> = {}): Promis
   return result.rows.map(mapRow);
 }
 
+export async function getTotalCount(): Promise<number> {
+  const result = await sql`SELECT COUNT(*)::int AS count FROM stock_items`;
+  return result.rows[0].count as number;
+}
+
 export async function getStockItem(id: string): Promise<StockItem | null> {
   const result = await sql`SELECT * FROM stock_items WHERE id = ${id}`;
   if (result.rows.length === 0) return null;

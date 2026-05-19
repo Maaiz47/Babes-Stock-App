@@ -39,6 +39,7 @@ export default function HomePage() {
   const [importOpen, setImportOpen] = useState(false);
   const [quickItem, setQuickItem] = useState<StockItem | null>(null);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [racks, setRacks] = useState<string[]>([]);
@@ -74,15 +75,17 @@ export default function HomePage() {
 
   const fetchDistinct = useCallback(async () => {
     if (!dbReady) return;
-    const [catRes, locRes, rackRes] = await Promise.all([
+    const [catRes, locRes, rackRes, countRes] = await Promise.all([
       fetch('/api/stock?distinct=category'),
       fetch('/api/stock?distinct=location'),
       fetch('/api/stock?distinct=rack_number'),
+      fetch('/api/stock?count=true'),
     ]);
-    const [cat, loc, rack] = await Promise.all([catRes.json(), locRes.json(), rackRes.json()]);
+    const [cat, loc, rack, countJson] = await Promise.all([catRes.json(), locRes.json(), rackRes.json(), countRes.json()]);
     setCategories(cat.values ?? []);
     setLocations(loc.values ?? []);
     setRacks(rack.values ?? []);
+    setTotalCount(countJson.count ?? null);
   }, [dbReady]);
 
   useEffect(() => { initDB(); }, [initDB]);
@@ -176,7 +179,7 @@ export default function HomePage() {
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'All Items', value: stats.total, icon: Package, color: 'text-gray-400', onClick: () => setFilters(EMPTY_FILTERS), active: !isFiltered },
+            { label: 'All Items', value: totalCount ?? stats.total, icon: Package, color: 'text-gray-400', onClick: () => setFilters(EMPTY_FILTERS), active: !isFiltered },
             { label: 'In Stock', value: stats.inStock, icon: Package, color: 'text-emerald-400', onClick: () => setStatFilter({ status: 'in-stock' }), active: filters.status === 'in-stock' && !filters.mismatch_only },
             { label: 'Low Stock', value: stats.lowStock, icon: TrendingDown, color: 'text-amber-400', onClick: () => setStatFilter({ status: 'low-stock' }), active: filters.status === 'low-stock' },
             { label: 'Mismatches', value: stats.mismatches, icon: AlertTriangle, color: 'text-amber-400', onClick: () => setStatFilter({ mismatch_only: true }), active: filters.mismatch_only },
