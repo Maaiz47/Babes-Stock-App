@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import {
   Package, Minus, Plus, Hash, ClipboardList, Pencil, Copy,
   Upload, Download, Tag, AlertTriangle, MapPin, Building2,
-  ChevronRight, ChevronLeft, CheckCircle2
+  ChevronRight, ChevronLeft, CheckCircle2, TrendingUp, ArrowRightLeft
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -24,10 +24,11 @@ const steps: Step[] = [
         <p className="text-gray-300 text-sm">Babes Stock tracks inventory across locations with both <strong className="text-white">system quantities</strong> (the official record) and <strong className="text-white">physical counts</strong> (what you actually count on the shelf). Discrepancies are automatically flagged.</p>
         <div className="grid grid-cols-2 gap-2 mt-4">
           {[
-            ['All Items', 'Shows total items · click to clear filters'],
+            ['All Items', 'Total items in the system · click to clear all filters'],
             ['In Stock', 'Click to filter to in-stock items only'],
             ['Low Stock', 'Click to filter to low-stock items'],
-            ['Mismatches', 'Click to show items where physical ≠ system qty'],
+            ['Missing', 'Physical count is lower than system qty — stock may have walked out'],
+            ['Excess', 'Physical count is higher than system qty — unlogged deliveries'],
           ].map(([label, desc]) => (
             <div key={label} className="bg-white/4 border border-white/8 rounded-lg px-3 py-2">
               <p className="text-xs font-semibold text-violet-300">{label}</p>
@@ -72,12 +73,13 @@ const steps: Step[] = [
     icon: <Minus size={18} />,
     content: (
       <div className="space-y-3">
-        <p className="text-xs text-gray-500 mb-3">Tap any row to open Quick Adjust. Four action types:</p>
+        <p className="text-xs text-gray-500 mb-3">Tap any row to open Quick Adjust. Five action types:</p>
         {[
           { icon: <Minus size={14} />, color: 'text-red-400', label: 'Remove', desc: 'Reduces both system AND physical qty. Requires "Taken by" name. Can go negative — warns you before confirming.' },
           { icon: <Plus size={14} />, color: 'text-emerald-400', label: 'Add', desc: 'Increases both system AND physical qty. Optional "Brought by" field records who delivered the stock.' },
-          { icon: <ClipboardList size={14} />, color: 'text-amber-400', label: 'Count', desc: 'Updates physical qty only — system qty stays unchanged. Any difference is flagged as a mismatch.' },
+          { icon: <ClipboardList size={14} />, color: 'text-amber-400', label: 'Count', desc: 'Updates physical qty only — system qty stays unchanged. Any difference is flagged as missing or excess.' },
           { icon: <Hash size={14} />, color: 'text-blue-400', label: 'Set Qty', desc: 'Direct system quantity override. Use carefully — physical count stays the same, likely creating a mismatch.' },
+          { icon: <ArrowRightLeft size={14} />, color: 'text-indigo-400', label: 'Move Location', desc: 'Reassigns the item to a different warehouse or office. Quantities are unchanged — pick from existing locations or type a new one.' },
         ].map(({ icon, color, label, desc }) => (
           <div key={label} className="flex gap-3 items-start">
             <span className={cn('mt-0.5 shrink-0', color)}>{icon}</span>
@@ -119,22 +121,33 @@ const steps: Step[] = [
     icon: <AlertTriangle size={18} />,
     content: (
       <div className="space-y-3">
-        <p className="text-sm text-gray-300">A mismatch is flagged whenever <strong className="text-white">physical qty ≠ system qty</strong>. This shows as:</p>
-        <ul className="space-y-2 text-xs text-gray-400">
-          <li className="flex items-center gap-2"><AlertTriangle size={12} className="text-amber-400 shrink-0" /> Amber triangle on the item row</li>
-          <li className="flex items-center gap-2"><span className="text-amber-400 font-mono text-xs">/N</span> Physical count shown next to system qty in amber</li>
-          <li className="flex items-center gap-2"><span className="w-1 h-4 bg-amber-500 rounded-full shrink-0" /> Left border on the row turns amber</li>
-        </ul>
-        <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3 mt-2">
-          <p className="text-xs text-amber-300 font-semibold mb-1">Common causes</p>
-          <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
-            <li>Stock removed without logging it (use Remove action)</li>
-            <li>Physical count done after unlogged changes (use Count action)</li>
+        <p className="text-sm text-gray-300">Mismatches are split into two types — colour-coded throughout the table:</p>
+        <div className="space-y-2">
+          <div className="flex gap-3 items-start bg-red-500/8 border border-red-500/20 rounded-xl px-4 py-3">
+            <AlertTriangle size={14} className="text-red-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-red-300">Missing — physical &lt; system</p>
+              <p className="text-xs text-gray-400 mt-0.5">The physical count is lower than the system record. Red left border, red badge, red triangle icon on the row. Stock may have been removed without logging.</p>
+            </div>
+          </div>
+          <div className="flex gap-3 items-start bg-teal-500/8 border border-teal-500/20 rounded-xl px-4 py-3">
+            <TrendingUp size={14} className="text-teal-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-teal-300">Excess — physical &gt; system</p>
+              <p className="text-xs text-gray-400 mt-0.5">The physical count is higher than the system record. Teal left border, teal badge, trending-up icon. Usually means an unlogged delivery arrived.</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white/4 border border-white/8 rounded-xl px-4 py-3">
+          <p className="text-xs text-gray-400 font-semibold mb-1">Common causes</p>
+          <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
+            <li>Stock taken without using the Remove action</li>
+            <li>Delivery received without using the Add action</li>
+            <li>Count done after unlogged changes</li>
             <li>System quantity overridden with Set Qty</li>
-            <li>Negative system qty from over-removal</li>
           </ul>
         </div>
-        <p className="text-xs text-gray-500">Use the <strong className="text-white">Mismatches</strong> stat card or filter to see all flagged items at once. Resolve by doing a fresh Count or correcting the Remove entries.</p>
+        <p className="text-xs text-gray-500">Use the <strong className="text-white">Missing</strong> or <strong className="text-white">Excess</strong> stat cards to filter to each type. Resolve by doing a fresh Count or logging the missed Remove/Add.</p>
       </div>
     ),
   },
@@ -182,7 +195,14 @@ const steps: Step[] = [
             </div>
           </div>
         ))}
-        <p className="text-xs text-gray-500">Export All (header) or Export (bulk action) gives you a full Excel sheet including all fields, location, and mismatch status.</p>
+        <p className="text-xs text-gray-500 mt-1">Export All (header) or Export (bulk action) gives you a full Excel sheet including all fields, location, and mismatch status.</p>
+        <div className="flex gap-3 items-start bg-white/4 border border-white/8 rounded-xl px-4 py-3">
+          <ClipboardList size={14} className="text-violet-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-white">Count Sheet</p>
+            <p className="text-xs text-gray-400 mt-0.5">Generates a printable Excel or CSV with a blank "Physical Count" column. Filter by location, rack, or category first to produce a sheet for a specific area. Fill it in during a stocktake, then import it back as a Stock Count.</p>
+          </div>
+        </div>
       </div>
     ),
   },
