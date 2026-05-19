@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select } from './ui/select';
 import { useToast } from './ui/toast';
-import { generateStockNumber } from '@/lib/utils';
+import { generateStockNumber, cn } from '@/lib/utils';
 import type { StockItem, StockItemInput, StockStatus } from '@/lib/types';
 import { Wand2 } from 'lucide-react';
 import { HistoryPanel } from './HistoryPanel';
@@ -136,10 +136,11 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
 
   const status = watch('status');
 
-  const Field = ({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) => (
+  const Field = ({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) => (
     <div>
       <label className="block text-xs font-medium text-gray-400 mb-1.5">{label}</label>
       {children}
+      {hint && !error && <p className="mt-1 text-[11px] text-gray-600">{hint}</p>}
       {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
     </div>
   );
@@ -199,15 +200,15 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="System Quantity *" error={errors.quantity?.message}>
+          <Field label="System Quantity *" hint="Official record count · adjust via +/− quick action on the table" error={errors.quantity?.message}>
             <Input type="number" min={0} {...register('quantity')} />
           </Field>
-          <Field label="Physical Count" error={errors.physical_quantity?.message}>
+          <Field label="Physical Count" hint="Actual counted qty · leave blank until a count is done" error={errors.physical_quantity?.message}>
             <Input
               type="number"
               min={0}
               {...register('physical_quantity')}
-              placeholder="Leave blank if not counted"
+              placeholder="Leave blank if not yet counted"
             />
           </Field>
         </div>
@@ -216,21 +217,31 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
           <Field label="Date Added *" error={errors.date_added?.message}>
             <Input type="date" {...register('date_added')} />
           </Field>
-          <Field label="Date Removed">
-            <Input type="date" {...register('date_removed')} />
+          <Field label="Stored By" hint="Who placed this item into storage">
+            <Input {...register('stored_by')} placeholder="Name" />
           </Field>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          <Field label="Stored By">
-            <Input {...register('stored_by')} placeholder="Who stored it" />
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Received By" hint="Who signed for or took physical delivery of this item">
+            <Input {...register('received_by')} placeholder="Name" />
           </Field>
-          <Field label="Released To">
-            <Input {...register('released_to')} placeholder="Who it was released to" />
-          </Field>
-          <Field label="Received By">
-            <Input {...register('received_by')} placeholder="Who received it" />
-          </Field>
+        </div>
+
+        {/* Removal details — relevant when status is Removed */}
+        <div className={cn('rounded-xl border px-4 py-3 space-y-3 transition-colors', status === 'removed' ? 'border-amber-500/25 bg-amber-500/4' : 'border-white/6 bg-white/2 opacity-60')}>
+          <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">
+            Release / Removal details
+            {status !== 'removed' && <span className="ml-2 normal-case text-gray-600 font-normal">· auto-filled when you use Remove Stock action</span>}
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Date Removed" hint="When the item left inventory">
+              <Input type="date" {...register('date_removed')} />
+            </Field>
+            <Field label="Released To" hint="Who received or took this stock">
+              <Input {...register('released_to')} placeholder="Name" />
+            </Field>
+          </div>
         </div>
 
         <Field label="Notes">
