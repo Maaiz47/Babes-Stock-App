@@ -170,17 +170,61 @@ export default function HomePage() {
     <div className="min-h-screen bg-[#080810]">
       {splashPhase !== 'done' && (
         <div className={cn(
-          'fixed inset-0 z-[100] bg-[#080810] flex flex-col items-center justify-center gap-4 transition-opacity duration-500',
+          'fixed inset-0 z-[100] bg-[#080810] overflow-hidden transition-opacity duration-500',
           splashPhase === 'fade' ? 'opacity-0 pointer-events-none' : 'opacity-100'
         )}>
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-2xl shadow-violet-500/40">
-            <Package size={30} className="text-white" />
-          </div>
-          <div className="text-center">
-            <h1 className="text-xl font-bold text-white">Babes Stock</h1>
+          <style>{`
+            @keyframes splash-drop {
+              0%   { transform: translateY(-680px) rotate(var(--twist)); }
+              65%  { transform: translateY(0px) rotate(calc(var(--twist) * 0.15)); animation-timing-function: ease-out; }
+              74%  { transform: translateY(-28px) rotate(calc(var(--twist) * -0.1)); animation-timing-function: ease-in; }
+              84%  { transform: translateY(0px) rotate(calc(var(--twist) * 0.05)); animation-timing-function: ease-out; }
+              90%  { transform: translateY(-9px) rotate(0deg); animation-timing-function: ease-in; }
+              96%  { transform: translateY(0px) rotate(0deg); }
+              98%  { transform: translateY(-2px) rotate(0deg); }
+              100% { transform: translateY(0px) rotate(0deg); }
+            }
+            .sbox {
+              position: absolute;
+              user-select: none;
+              line-height: 1;
+              animation: splash-drop 0.8s ease-in both;
+            }
+          `}</style>
+
+          {([
+            { left: '6%',  top: '22%', size: 52, delay: 0,    twist: '-11deg' },
+            { left: '23%', top: '20%', size: 60, delay: 0.13, twist:  '8deg'  },
+            { left: '44%', top: '23%', size: 44, delay: 0.05, twist: '-6deg'  },
+            { left: '63%', top: '21%', size: 56, delay: 0.21, twist: '13deg'  },
+            { left: '82%', top: '19%', size: 40, delay: 0.09, twist: '-9deg'  },
+            { left: '14%', top: '48%', size: 56, delay: 0.30, twist:  '9deg'  },
+            { left: '35%', top: '46%', size: 64, delay: 0.19, twist: '-12deg' },
+            { left: '57%', top: '49%', size: 48, delay: 0.37, twist:  '7deg'  },
+            { left: '76%', top: '47%', size: 52, delay: 0.25, twist: '-5deg'  },
+          ] as { left: string; top: string; size: number; delay: number; twist: string }[]).map((b, i) => (
+            <span
+              key={i}
+              className="sbox"
+              style={{
+                left: b.left,
+                top: b.top,
+                fontSize: b.size,
+                animationDelay: `${b.delay}s`,
+                '--twist': b.twist,
+              } as React.CSSProperties}
+            >
+              📦
+            </span>
+          ))}
+
+          <div className="absolute bottom-14 left-0 right-0 flex flex-col items-center gap-2">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-xl shadow-violet-500/40">
+              <Package size={22} className="text-white" />
+            </div>
+            <h1 className="text-xl font-bold text-white mt-1">Babes Stock</h1>
             <p className="text-sm text-gray-500">Inventory Manager</p>
           </div>
-          <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
         </div>
       )}
       {/* Header */}
