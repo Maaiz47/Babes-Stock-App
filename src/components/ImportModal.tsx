@@ -54,15 +54,25 @@ export function ImportModal({ open, onClose, onImported }: Props) {
   const [result, setResult] = useState<{ created: number; errors: string[] } | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [titleRowWarning, setTitleRowWarning] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setStep('upload');
     setMode('count');
+    setTitleRowWarning(false);
     setRows([]);
     setHeaders([]);
     setMappings([]);
     setResult(null);
+  };
+
+  const detectTitleRow = (hdrs: string[], selectedMode: ImportMode): boolean => {
+    // If only one "column" exists it's almost certainly a title row
+    if (hdrs.length === 1) return true;
+    // If none of the headers auto-map to a known field it's likely a title / non-header row
+    const mapped = hdrs.filter((h) => autoMap(h, selectedMode) !== '').length;
+    return mapped === 0;
   };
 
   const processFile = (file: File, selectedMode: ImportMode) => {
@@ -75,9 +85,11 @@ export function ImportModal({ open, onClose, onImported }: Props) {
         skipEmptyLines: true,
         complete: (res) => {
           const hdrs = res.meta.fields ?? [];
+          const maps = hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h, selectedMode) }));
           setHeaders(hdrs);
           setRows(res.data);
-          setMappings(hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h, selectedMode) })));
+          setMappings(maps);
+          setTitleRowWarning(detectTitleRow(hdrs, selectedMode));
           setStep('map');
         },
         error: () => toastError('Parse error', 'Could not parse CSV file'),
@@ -91,9 +103,11 @@ export function ImportModal({ open, onClose, onImported }: Props) {
         const json = XLSX.utils.sheet_to_json<ImportRow>(ws, { raw: false });
         if (json.length === 0) { toastError('Empty file', 'No data found'); return; }
         const hdrs = Object.keys(json[0]);
+        const maps = hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h, selectedMode) }));
         setHeaders(hdrs);
         setRows(json);
-        setMappings(hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h, selectedMode) })));
+        setMappings(maps);
+        setTitleRowWarning(detectTitleRow(hdrs, selectedMode));
         setStep('map');
       };
       reader.readAsArrayBuffer(file);
@@ -305,12 +319,30 @@ export function ImportModal({ open, onClose, onImported }: Props) {
             <p className="text-sm font-medium text-gray-300">Drop your file here, or tap to browse</p>
             <p className="mt-1 text-xs text-gray-500">Supports .csv, .xlsx, .xls</p>
           </div>
+
+          <div className="flex items-start gap-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20 px-3 py-2.5">
+            <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-300 space-y-0.5">
+              <p className="font-medium">Column headings must be on row 1</p>
+              <p className="text-amber-400/70">Remove any title rows, merged cells, or blank rows above your headers. Row 1 should contain only the column names (e.g. Stock Number, Name, Quantity) with data starting on row 2.</p>
+            </div>
+          </div>
         </div>
       )}
 
       {step === 'map' && (
         <div className="flex flex-col gap-4">
           <p className="text-sm text-gray-400">{rows.length} rows found. Map your columns to the correct fields.</p>
+
+          {titleRowWarning && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-red-500/10 border border-red-500/30 px-3 py-2.5">
+              <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-red-300 space-y-1">
+                <p className="font-medium">Row 1 looks like a title row, not column headers</p>
+                <p className="text-red-400/80">None of the detected column names match known fields. Your file may have a title or description row above the actual column headers. Open the file, delete any rows before the header row, and re-upload so that column names (e.g. <em>Stock Number</em>, <em>Name</em>, <em>Quantity</em>) appear on row 1.</p>
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             {mappings.map((m) => (
               <div key={m.csvColumn} className="flex items-center gap-3">
