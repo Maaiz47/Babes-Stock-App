@@ -94,6 +94,34 @@ export async function markResetTokenUsed(token: string): Promise<void> {
   await sql`UPDATE password_reset_tokens SET used = true WHERE token = ${token}`;
 }
 
+export async function updateUserEmail(userId: string, newEmail: string): Promise<void> {
+  await sql`UPDATE users SET email = ${newEmail.toLowerCase()}, updated_at = NOW() WHERE id = ${userId}`;
+}
+
+export async function createEmailChangeRequest(userId: string, newEmail: string): Promise<string> {
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+  await sql`DELETE FROM email_change_requests WHERE user_id = ${userId}`;
+  await sql`
+    INSERT INTO email_change_requests (user_id, new_email, code, expires_at)
+    VALUES (${userId}, ${newEmail.toLowerCase()}, ${code}, ${expiresAt.toISOString()})
+  `;
+  return code;
+}
+
+export async function validateEmailChangeCode(userId: string, code: string): Promise<string | null> {
+  const result = await sql`
+    SELECT new_email FROM email_change_requests
+    WHERE user_id = ${userId} AND code = ${code} AND used = false AND expires_at > NOW()
+    LIMIT 1
+  `;
+  return result.rows.length > 0 ? String(result.rows[0].new_email) : null;
+}
+
+export async function markEmailChangeUsed(userId: string): Promise<void> {
+  await sql`UPDATE email_change_requests SET used = true WHERE user_id = ${userId}`;
+}
+
 export async function usernameExists(username: string): Promise<boolean> {
   const r = await sql`SELECT id FROM users WHERE username = ${username.toLowerCase()} LIMIT 1`;
   return r.rows.length > 0;

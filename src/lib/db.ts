@@ -79,6 +79,17 @@ export async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS email_change_requests (
+      id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      new_email TEXT NOT NULL,
+      code TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
   // Seed admin user if none exists (password: 123456, hashed)
   // bcrypt hash of '123456' with 10 rounds
   const adminCheck = await sql`SELECT id FROM users WHERE is_admin = true LIMIT 1`;

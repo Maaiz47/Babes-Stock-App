@@ -166,10 +166,13 @@ export default function HomePage() {
           <div className="flex items-center gap-2">
             {currentUser && (
               <div className="hidden sm:flex items-center gap-2 mr-1">
-                <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <button
+                  onClick={() => router.push('/settings')}
+                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors px-2 py-1 rounded-lg hover:bg-white/8"
+                >
                   {currentUser.isAdmin ? <Shield size={12} className="text-violet-400" /> : <User size={12} />}
                   <span className="text-gray-300">{currentUser.username}</span>
-                </div>
+                </button>
                 {currentUser.isAdmin && (
                   <Button variant="ghost" size="sm" onClick={() => router.push('/admin')} className="text-xs h-7 px-2">
                     Admin
