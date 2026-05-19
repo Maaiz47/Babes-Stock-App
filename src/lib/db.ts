@@ -370,7 +370,7 @@ export async function adjustQuantity(
     UPDATE stock_items SET
       quantity = ${newQty},
       physical_quantity = ${newPhysical},
-      released_to = CASE WHEN ${takenBy} IS NOT NULL THEN ${takenBy} ELSE released_to END,
+      released_to = COALESCE(${takenBy}::text, released_to),
       updated_at = NOW()
     WHERE id = ${id}
     RETURNING *
