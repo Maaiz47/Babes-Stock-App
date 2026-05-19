@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getStockItems, createStockItem, getDistinctValues, getTotalCount } from '@/lib/db';
+import { getStockItems, createStockItem, getDistinctValues, getTotalCount, getStats } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import type { StockFilters } from '@/lib/types';
 
@@ -20,6 +20,11 @@ export async function GET(req: NextRequest) {
       received_by: p.get('received_by') || '',
       mismatch_only: p.get('mismatch_only') === 'true',
     };
+
+    if (p.get('stats') === 'true') {
+      const stats = await getStats();
+      return NextResponse.json({ stats });
+    }
 
     if (p.get('count') === 'true') {
       const count = await getTotalCount();

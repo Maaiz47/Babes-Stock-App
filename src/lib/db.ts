@@ -56,6 +56,8 @@ export async function initDB() {
   `;
   // Migration: add location column if it doesn't exist yet
   await sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS location TEXT`;
+  // Allow same stock number in different locations
+  await sql`ALTER TABLE stock_items DROP CONSTRAINT IF EXISTS stock_items_stock_number_key`;
 
   // Auth tables
   await sql`
@@ -213,6 +215,18 @@ export async function getTotalCount(): Promise<number> {
   return result.rows[0].count as number;
 }
 
+export async function getStats(): Promise<{ total: number; in_stock: number; low_stock: number; mismatches: number }> {
+  const result = await sql`
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE status = 'in-stock')::int AS in_stock,
+      COUNT(*) FILTER (WHERE status = 'low-stock')::int AS low_stock,
+      COUNT(*) FILTER (WHERE physical_quantity IS NOT NULL AND physical_quantity != quantity)::int AS mismatches
+    FROM stock_items
+  `;
+  return result.rows[0] as { total: number; in_stock: number; low_stock: number; mismatches: number };
+}
+
 export async function getStockItem(id: string): Promise<StockItem | null> {
   const result = await sql`SELECT * FROM stock_items WHERE id = ${id}`;
   if (result.rows.length === 0) return null;
@@ -342,99 +356,122 @@ export async function bulkCreateStockItems(
   for (const item of items) {
     try {
       if (mode === 'count') {
-        const physQty = item.physical_quantity ?? item.quantity;
-        const upserted = await sql`
-          INSERT INTO stock_items (
-            stock_number, name, description, category, location, rack_number,
-            quantity, physical_quantity, status, date_added, stored_by, notes
-          ) VALUES (
-            ${item.stock_number}, ${item.name}, ${item.description ?? null},
-            ${item.category ?? null}, ${item.location ?? null}, ${item.rack_number ?? null},
-            ${physQty}, ${physQty},
-            ${item.status}, ${item.date_added}, ${item.stored_by ?? null}, ${item.notes ?? null}
-          )
-          ON CONFLICT (stock_number) DO UPDATE SET
-            physical_quantity = ${physQty},
-            updated_at = NOW()
-          RETURNING id, stock_number, quantity, physical_quantity
-        `;
-        if (upserted.rows[0]) {
-          const r = upserted.rows[0];
-          await sql`
-            INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, physical_before, physical_after, notes, changed_by)
-            VALUES (${String(r.id)}, ${String(r.stock_number)}, 'count', ${Number(r.quantity)}, ${Number(r.quantity)}, null, ${physQty}, 'Imported count', ${changedBy ?? null})
+        const physQty = item.physical_quantity ?? null;
+        const sysQty = item.quantity; // preserve system qty as-is
+        // Try to update existing item (match on stock_number + location)
+        const existing = await sql.query(
+          `SELECT id, stock_number, quantity, physical_quantity FROM stock_items WHERE stock_number = $1 AND COALESCE(location, '') = COALESCE($2, '') LIMIT 1`,
+          [item.stock_number, item.location ?? null]
+        );
+        let rowId: string, rowStockNumber: string, rowQty: number;
+        if (existing.rows.length > 0) {
+          const r = existing.rows[0];
+          await sql.query(
+            `UPDATE stock_items SET physical_quantity = $1, updated_at = NOW() WHERE id = $2`,
+            [physQty, r.id]
+          );
+          rowId = String(r.id);
+          rowStockNumber = String(r.stock_number);
+          rowQty = Number(r.quantity);
+        } else {
+          const ins = await sql`
+            INSERT INTO stock_items (
+              stock_number, name, description, category, location, rack_number,
+              quantity, physical_quantity, status, date_added, stored_by, notes
+            ) VALUES (
+              ${item.stock_number}, ${item.name}, ${item.description ?? null},
+              ${item.category ?? null}, ${item.location ?? null}, ${item.rack_number ?? null},
+              ${sysQty}, ${physQty},
+              ${item.status}, ${item.date_added}, ${item.stored_by ?? null}, ${item.notes ?? null}
+            )
+            RETURNING id, stock_number, quantity
           `;
+          rowId = String(ins.rows[0].id);
+          rowStockNumber = String(ins.rows[0].stock_number);
+          rowQty = Number(ins.rows[0].quantity);
         }
+        await sql`
+          INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, physical_before, physical_after, notes, changed_by)
+          VALUES (${rowId}, ${rowStockNumber}, 'count', ${rowQty}, ${rowQty}, null, ${physQty}, 'Imported count', ${changedBy ?? null})
+        `;
       } else if (mode === 'release') {
-        const upserted = await sql`
-          INSERT INTO stock_items (
-            stock_number, name, description, category, location, rack_number,
-            quantity, physical_quantity, status, date_added, date_removed,
-            released_to, received_by, stored_by, notes
-          ) VALUES (
-            ${item.stock_number}, ${item.name}, ${item.description ?? null},
-            ${item.category ?? null}, ${item.location ?? null}, ${item.rack_number ?? null},
-            ${item.quantity}, ${item.physical_quantity ?? null},
-            'removed', ${item.date_added}, ${item.date_removed ?? null},
-            ${item.released_to ?? null}, ${item.received_by ?? null},
-            ${item.stored_by ?? null}, ${item.notes ?? null}
-          )
-          ON CONFLICT (stock_number) DO UPDATE SET
-            quantity = EXCLUDED.quantity,
-            status = 'removed',
-            date_removed = EXCLUDED.date_removed,
-            released_to = EXCLUDED.released_to,
-            received_by = EXCLUDED.received_by,
-            notes = EXCLUDED.notes,
-            updated_at = NOW()
-          RETURNING id, stock_number, quantity
-        `;
-        if (upserted.rows[0]) {
-          const r = upserted.rows[0];
-          await sql`
-            INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
-            VALUES (${String(r.id)}, ${String(r.stock_number)}, 'subtract', null, ${Number(r.quantity)}, 'Imported release', ${changedBy ?? null})
+        const existing = await sql.query(
+          `SELECT id, stock_number, quantity FROM stock_items WHERE stock_number = $1 AND COALESCE(location, '') = COALESCE($2, '') LIMIT 1`,
+          [item.stock_number, item.location ?? null]
+        );
+        let rowId: string, rowStockNumber: string, rowQty: number;
+        if (existing.rows.length > 0) {
+          const r = existing.rows[0];
+          await sql.query(
+            `UPDATE stock_items SET quantity = $1, status = 'removed', date_removed = $2, released_to = $3, received_by = $4, notes = $5, updated_at = NOW() WHERE id = $6`,
+            [item.quantity, item.date_removed ?? null, item.released_to ?? null, item.received_by ?? null, item.notes ?? null, r.id]
+          );
+          rowId = String(r.id);
+          rowStockNumber = String(r.stock_number);
+          rowQty = Number(r.quantity);
+        } else {
+          const ins = await sql`
+            INSERT INTO stock_items (
+              stock_number, name, description, category, location, rack_number,
+              quantity, physical_quantity, status, date_added, date_removed,
+              released_to, received_by, stored_by, notes
+            ) VALUES (
+              ${item.stock_number}, ${item.name}, ${item.description ?? null},
+              ${item.category ?? null}, ${item.location ?? null}, ${item.rack_number ?? null},
+              ${item.quantity}, ${item.physical_quantity ?? null},
+              'removed', ${item.date_added}, ${item.date_removed ?? null},
+              ${item.released_to ?? null}, ${item.received_by ?? null},
+              ${item.stored_by ?? null}, ${item.notes ?? null}
+            )
+            RETURNING id, stock_number, quantity
           `;
+          rowId = String(ins.rows[0].id);
+          rowStockNumber = String(ins.rows[0].stock_number);
+          rowQty = Number(ins.rows[0].quantity);
         }
+        await sql`
+          INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
+          VALUES (${rowId}, ${rowStockNumber}, 'subtract', null, ${rowQty}, 'Imported release', ${changedBy ?? null})
+        `;
       } else {
-        const upserted = await sql`
-          INSERT INTO stock_items (
-            stock_number, name, description, category, location, rack_number,
-            quantity, physical_quantity, status, date_added, date_removed,
-            released_to, received_by, stored_by, notes
-          ) VALUES (
-            ${item.stock_number}, ${item.name}, ${item.description ?? null},
-            ${item.category ?? null}, ${item.location ?? null}, ${item.rack_number ?? null},
-            ${item.quantity}, ${item.physical_quantity ?? null},
-            ${item.status}, ${item.date_added}, ${item.date_removed ?? null},
-            ${item.released_to ?? null}, ${item.received_by ?? null},
-            ${item.stored_by ?? null}, ${item.notes ?? null}
-          )
-          ON CONFLICT (stock_number) DO UPDATE SET
-            name = EXCLUDED.name,
-            description = EXCLUDED.description,
-            category = EXCLUDED.category,
-            location = EXCLUDED.location,
-            rack_number = EXCLUDED.rack_number,
-            quantity = EXCLUDED.quantity,
-            physical_quantity = EXCLUDED.physical_quantity,
-            status = EXCLUDED.status,
-            date_added = EXCLUDED.date_added,
-            date_removed = EXCLUDED.date_removed,
-            released_to = EXCLUDED.released_to,
-            received_by = EXCLUDED.received_by,
-            stored_by = EXCLUDED.stored_by,
-            notes = EXCLUDED.notes,
-            updated_at = NOW()
-          RETURNING id, stock_number, quantity
-        `;
-        if (upserted.rows[0]) {
-          const r = upserted.rows[0];
-          await sql`
-            INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
-            VALUES (${String(r.id)}, ${String(r.stock_number)}, 'import', null, ${Number(r.quantity)}, 'General import', ${changedBy ?? null})
+        const existing = await sql.query(
+          `SELECT id, stock_number, quantity FROM stock_items WHERE stock_number = $1 AND COALESCE(location, '') = COALESCE($2, '') LIMIT 1`,
+          [item.stock_number, item.location ?? null]
+        );
+        let rowId: string, rowStockNumber: string, rowQty: number;
+        if (existing.rows.length > 0) {
+          const r = existing.rows[0];
+          await sql.query(
+            `UPDATE stock_items SET name = $1, description = $2, category = $3, location = $4, rack_number = $5, quantity = $6, physical_quantity = $7, status = $8, date_added = $9, date_removed = $10, released_to = $11, received_by = $12, stored_by = $13, notes = $14, updated_at = NOW() WHERE id = $15`,
+            [item.name, item.description ?? null, item.category ?? null, item.location ?? null, item.rack_number ?? null, item.quantity, item.physical_quantity ?? null, item.status, item.date_added, item.date_removed ?? null, item.released_to ?? null, item.received_by ?? null, item.stored_by ?? null, item.notes ?? null, r.id]
+          );
+          rowId = String(r.id);
+          rowStockNumber = String(r.stock_number);
+          rowQty = item.quantity;
+        } else {
+          const ins = await sql`
+            INSERT INTO stock_items (
+              stock_number, name, description, category, location, rack_number,
+              quantity, physical_quantity, status, date_added, date_removed,
+              released_to, received_by, stored_by, notes
+            ) VALUES (
+              ${item.stock_number}, ${item.name}, ${item.description ?? null},
+              ${item.category ?? null}, ${item.location ?? null}, ${item.rack_number ?? null},
+              ${item.quantity}, ${item.physical_quantity ?? null},
+              ${item.status}, ${item.date_added}, ${item.date_removed ?? null},
+              ${item.released_to ?? null}, ${item.received_by ?? null},
+              ${item.stored_by ?? null}, ${item.notes ?? null}
+            )
+            RETURNING id, stock_number, quantity
           `;
+          rowId = String(ins.rows[0].id);
+          rowStockNumber = String(ins.rows[0].stock_number);
+          rowQty = ins.rows[0].quantity;
         }
+        await sql`
+          INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
+          VALUES (${rowId}, ${rowStockNumber}, 'import', null, ${rowQty}, 'General import', ${changedBy ?? null})
+        `;
       }
       created++;
     } catch (e) {
@@ -497,6 +534,19 @@ export async function adjustQuantity(
     )
   `;
 
+  return mapRow(result.rows[0]);
+}
+
+export async function moveItemLocation(id: string, newLocation: string | null, changedBy?: string): Promise<StockItem> {
+  const current = await getStockItem(id);
+  if (!current) throw new Error('Item not found');
+  const from = current.location || '(none)';
+  const to = newLocation || '(none)';
+  const result = await sql`UPDATE stock_items SET location = ${newLocation}, updated_at = NOW() WHERE id = ${id} RETURNING *`;
+  await sql`
+    INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
+    VALUES (${id}, ${current.stock_number}, 'move', ${current.quantity}, ${current.quantity}, ${`Moved: ${from} → ${to}`}, ${changedBy ?? null})
+  `;
   return mapRow(result.rows[0]);
 }
 

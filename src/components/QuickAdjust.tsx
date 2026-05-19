@@ -5,14 +5,15 @@ import { Input } from './ui/input';
 import { useToast } from './ui/toast';
 import type { StockItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { Minus, Plus, Hash, ClipboardList, X, AlertTriangle } from 'lucide-react';
+import { Minus, Plus, Hash, ClipboardList, X, AlertTriangle, ArrowRightLeft } from 'lucide-react';
 
-type AdjustType = 'subtract' | 'add' | 'count' | 'set_system';
+type AdjustType = 'subtract' | 'add' | 'count' | 'set_system' | 'move';
 
 interface Props {
   item: StockItem | null;
   onClose: () => void;
   onSaved: () => void;
+  locations?: string[];
 }
 
 const TYPES: { value: AdjustType; label: string; icon: React.ReactNode; activeColor: string; activeBg: string }[] = [
@@ -28,7 +29,7 @@ function defaultAmount(type: AdjustType, item: StockItem): string {
   return '1';
 }
 
-export function QuickAdjust({ item, onClose, onSaved }: Props) {
+export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
   const { success, error: toastError } = useToast();
   const [type, setType] = useState<AdjustType>('subtract');
   const [amount, setAmount] = useState('1');
@@ -37,6 +38,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmNegative, setConfirmNegative] = useState(false);
+  const [newLocation, setNewLocation] = useState('');
 
   useEffect(() => {
     if (item) {
@@ -45,6 +47,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
       setTakenBy('');
       setBroughtBy('');
       setNotes('');
+      setNewLocation('');
     }
   }, [item?.id]);
 
@@ -53,7 +56,8 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
     setConfirmNegative(false);
     setTakenBy('');
     setBroughtBy('');
-    if (item) setAmount(defaultAmount(t, item));
+    setNewLocation('');
+    if (item && t !== 'move') setAmount(defaultAmount(t, item));
   };
 
   if (!item) return null;
@@ -83,17 +87,26 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
   const submit = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/stock/${item.id}/adjust`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type,
-          amount: num,
-          taken_by: takenBy || undefined,
-          brought_by: broughtBy || undefined,
-          notes: notes || undefined,
-        }),
-      });
+      let res: Response;
+      if (type === 'move') {
+        res = await fetch(`/api/stock/${item.id}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ location: newLocation || null }),
+        });
+      } else {
+        res = await fetch(`/api/stock/${item.id}/adjust`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type,
+            amount: num,
+            taken_by: takenBy || undefined,
+            brought_by: broughtBy || undefined,
+            notes: notes || undefined,
+          }),
+        });
+      }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       success('Updated', `${item.name}`);
@@ -160,6 +173,20 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
             ))}
           </div>
 
+          {/* Move Location — separate action */}
+          <button
+            onClick={() => handleTypeChange('move' as AdjustType)}
+            className={cn(
+              'flex items-center justify-center gap-2 w-full rounded-xl px-3 py-2.5 border transition-all text-sm',
+              type === 'move'
+                ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-400'
+                : 'border-white/8 bg-white/3 hover:bg-white/6 text-gray-400'
+            )}
+          >
+            <ArrowRightLeft size={14} />
+            <span className="font-medium">Move to Different Location</span>
+          </button>
+
           {/* Taken by — only for Remove */}
           {type === 'subtract' && (
             <div>
@@ -186,7 +213,27 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
             </div>
           )}
 
+          {type === 'move' && (
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Current location: <strong className="text-gray-300">{item.location || '(none)'}</strong></p>
+              <label className="text-xs font-medium text-indigo-400 mb-1.5 block">New location</label>
+              <input
+                type="text"
+                list="move-locations-list"
+                value={newLocation}
+                onChange={(e) => setNewLocation(e.target.value)}
+                placeholder="Enter or select location…"
+                autoFocus
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
+              />
+              <datalist id="move-locations-list">
+                {(locations ?? []).filter(l => l !== item.location).map(l => <option key={l} value={l} />)}
+              </datalist>
+            </div>
+          )}
+
           {/* Amount stepper */}
+          {type !== 'move' && (
           <div>
             <label className="text-xs text-gray-500 mb-1.5 block">
               {type === 'count' ? 'Physical count' : type === 'set_system' ? 'Set system quantity to' : 'Quantity'}
@@ -213,8 +260,10 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
               </button>
             </div>
           </div>
+          )}
 
           {/* Preview — always show, flag heavily if system changes */}
+          {type !== 'move' && (
           <div className={cn(
             'rounded-xl px-4 py-3 space-y-1.5 border',
             systemChanged ? 'bg-red-500/8 border-red-500/20' : 'bg-white/4 border-white/8'
@@ -262,6 +311,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
               </p>
             )}
           </div>
+          )}
 
           {/* Notes */}
           <div>
@@ -296,7 +346,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
               size="lg"
               variant={type === 'subtract' ? 'destructive' : type === 'add' ? 'success' : 'default'}
               onClick={wouldGoNegative && !confirmNegative ? () => setConfirmNegative(false) : submit}
-              disabled={saving || (type === 'subtract' && !takenBy.trim())}
+              disabled={saving || (type === 'subtract' && !takenBy.trim()) || (type === 'move' && (!newLocation.trim() || newLocation.trim() === item.location))}
             >
               {saving ? 'Saving…' : `Confirm ${activeType.label}`}
             </Button>

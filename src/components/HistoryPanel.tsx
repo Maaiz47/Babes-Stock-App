@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import type { HistoryEntry } from '@/lib/db';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronUp, History, ArrowUp, ArrowDown, Hash, ClipboardList, Package } from 'lucide-react';
+import { ChevronDown, ChevronUp, History, ArrowUp, ArrowDown, Hash, ClipboardList, Package, ArrowRightLeft } from 'lucide-react';
 
 function formatRelative(dateStr: string): string {
   const d = new Date(dateStr);
@@ -23,6 +23,7 @@ const TYPE_META: Record<string, { label: string; icon: React.ReactNode; color: s
   import: { label: 'Imported', icon: <Package size={12} />, color: 'text-violet-400 bg-violet-500/10' },
   create: { label: 'Created', icon: <Package size={12} />, color: 'text-gray-400 bg-white/5' },
   edit: { label: 'Edited', icon: <Hash size={12} />, color: 'text-gray-400 bg-white/5' },
+  move: { label: 'Moved', icon: <ArrowRightLeft size={12} />, color: 'text-indigo-400 bg-indigo-500/10' },
 };
 
 export function HistoryPanel({ itemId }: { itemId: string }) {

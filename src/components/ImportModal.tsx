@@ -18,79 +18,77 @@ interface Props {
   onImported: () => void;
 }
 
-type Step = 'upload' | 'map' | 'preview' | 'done';
+type Step = 'upload' | 'header' | 'map' | 'preview' | 'done';
+type RawRow = (string | number | null | undefined)[];
 
-const MODES: { value: ImportMode; label: string; desc: string; icon: React.ReactNode; hint: string }[] = [
+const MODES: { value: ImportMode; label: string; icon: React.ReactNode; hint: string }[] = [
   {
     value: 'count',
     label: 'Stock Count',
-    desc: 'Physical count of stock on hand',
     icon: <ClipboardList size={20} />,
     hint: 'Updates physical count. Flags mismatches vs system quantity. System quantity is preserved for existing items.',
   },
   {
     value: 'release',
     label: 'Stock Release',
-    desc: 'Stock going out / released',
     icon: <PackageOpen size={20} />,
     hint: 'Records who stock was released to and received by. Updates system quantity for existing items.',
   },
   {
     value: 'general',
     label: 'General Import',
-    desc: 'Add or update any fields',
     icon: <Layers size={20} />,
     hint: 'Full upsert — all mapped columns are written. Use this to initially load stock data.',
   },
 ];
 
+const ALL_STEPS: Step[] = ['upload', 'header', 'map', 'preview', 'done'];
+const STEP_LABELS: Record<Step, string> = {
+  upload: 'Upload',
+  header: 'Header Row',
+  map: 'Map Columns',
+  preview: 'Preview',
+  done: 'Done',
+};
+
 export function ImportModal({ open, onClose, onImported }: Props) {
   const { success, error: toastError, warning } = useToast();
   const [step, setStep] = useState<Step>('upload');
   const [mode, setMode] = useState<ImportMode>('count');
+  const [rawRows, setRawRows] = useState<RawRow[]>([]);
+  const [headerRowIdx, setHeaderRowIdx] = useState(0);
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
   const [result, setResult] = useState<{ created: number; errors: string[] } | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [titleRowWarning, setTitleRowWarning] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setStep('upload');
     setMode('count');
-    setTitleRowWarning(false);
+    setRawRows([]);
+    setHeaderRowIdx(0);
     setRows([]);
     setHeaders([]);
     setMappings([]);
     setResult(null);
   };
 
-  const detectTitleRow = (hdrs: string[], selectedMode: ImportMode): boolean => {
-    // If only one "column" exists it's almost certainly a title row
-    if (hdrs.length === 1) return true;
-    // If none of the headers auto-map to a known field it's likely a title / non-header row
-    const mapped = hdrs.filter((h) => autoMap(h, selectedMode) !== '').length;
-    return mapped === 0;
-  };
-
-  const processFile = (file: File, selectedMode: ImportMode) => {
+  const processFile = (file: File) => {
     const isCSV = file.name.endsWith('.csv') || file.type === 'text/csv';
     const isExcel = file.name.match(/\.(xlsx|xls)$/);
 
     if (isCSV) {
-      Papa.parse<ImportRow>(file, {
-        header: true,
-        skipEmptyLines: true,
+      Papa.parse<RawRow>(file, {
+        header: false,
+        skipEmptyLines: false,
         complete: (res) => {
-          const hdrs = res.meta.fields ?? [];
-          const maps = hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h, selectedMode) }));
-          setHeaders(hdrs);
-          setRows(res.data);
-          setMappings(maps);
-          setTitleRowWarning(detectTitleRow(hdrs, selectedMode));
-          setStep('map');
+          if (res.data.length === 0) { toastError('Empty file', 'No data found'); return; }
+          setRawRows(res.data as RawRow[]);
+          setHeaderRowIdx(0);
+          setStep('header');
         },
         error: () => toastError('Parse error', 'Could not parse CSV file'),
       });
@@ -100,15 +98,11 @@ export function ImportModal({ open, onClose, onImported }: Props) {
         const data = new Uint8Array(e.target!.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json<ImportRow>(ws, { raw: false });
+        const json = XLSX.utils.sheet_to_json<RawRow>(ws, { header: 1, raw: false, defval: '' });
         if (json.length === 0) { toastError('Empty file', 'No data found'); return; }
-        const hdrs = Object.keys(json[0]);
-        const maps = hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h, selectedMode) }));
-        setHeaders(hdrs);
-        setRows(json);
-        setMappings(maps);
-        setTitleRowWarning(detectTitleRow(hdrs, selectedMode));
-        setStep('map');
+        setRawRows(json as RawRow[]);
+        setHeaderRowIdx(0);
+        setStep('header');
       };
       reader.readAsArrayBuffer(file);
     } else {
@@ -116,18 +110,36 @@ export function ImportModal({ open, onClose, onImported }: Props) {
     }
   };
 
-  const handleFile = (file: File) => processFile(file, mode);
+  const confirmHeaderRow = () => {
+    const hdrs = (rawRows[headerRowIdx] ?? [])
+      .map((cell) => String(cell ?? '').trim())
+      .filter((h) => h !== '');
+
+    const dataRaws = rawRows
+      .slice(headerRowIdx + 1)
+      .filter((row) => row.some((cell) => String(cell ?? '').trim() !== ''));
+
+    const data: ImportRow[] = dataRaws.map((row) => {
+      const obj: ImportRow = {};
+      hdrs.forEach((h, i) => { obj[h] = String(row[i] ?? '').trim(); });
+      return obj;
+    });
+
+    setHeaders(hdrs);
+    setRows(data);
+    setMappings(hdrs.map((h) => ({ csvColumn: h, dbField: autoMap(h, mode) })));
+    setStep('map');
+  };
 
   const autoMap = (header: string, m: ImportMode): keyof StockItemInput | '' => {
     const h = header.toLowerCase().replace(/[\s_-]+/g, '_');
-    // In count mode, generic qty columns → physical_quantity (not system quantity)
     const qtyField: keyof StockItemInput = m === 'count' ? 'physical_quantity' : 'quantity';
     const map: Record<string, keyof StockItemInput> = {
       stock_number: 'stock_number', stock_no: 'stock_number', sku: 'stock_number', id: 'stock_number',
       name: 'name', item: 'name', product: 'name', title: 'name',
       description: 'description', desc: 'description',
       category: 'category', type: 'category',
-      rack: 'rack_number', rack_number: 'rack_number', location: 'rack_number',
+      rack: 'rack_number', rack_number: 'rack_number',
       quantity: qtyField, qty: qtyField, count: qtyField, stock: qtyField,
       physical_quantity: 'physical_quantity', physical_count: 'physical_quantity', actual_qty: 'physical_quantity',
       system_quantity: 'quantity', system_qty: 'quantity', system_stock: 'quantity',
@@ -198,9 +210,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
 
   const doImport = async () => {
     const { items, warnings } = buildItems();
-    if (warnings.length > 0) {
-      warning('Import warnings', `${warnings.length} auto-fix(es) applied`);
-    }
+    if (warnings.length > 0) warning('Import warnings', `${warnings.length} auto-fix(es) applied`);
     setImporting(true);
     try {
       const res = await fetch('/api/stock/bulk', {
@@ -212,10 +222,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
       if (!res.ok) throw new Error(json.error || 'Failed');
       setResult(json);
       setStep('done');
-      if (json.created > 0) {
-        success('Import complete', `${json.created} items imported`);
-        onImported();
-      }
+      if (json.created > 0) { success('Import complete', `${json.created} items imported`); onImported(); }
     } catch (e) {
       toastError('Import failed', String(e));
     } finally {
@@ -227,13 +234,17 @@ export function ImportModal({ open, onClose, onImported }: Props) {
     e.preventDefault();
     setDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) processFile(file, mode);
-  }, [mode]);
+    if (file) processFile(file);
+  }, []);
 
   const requiredMapped = mappings.some((m) => m.dbField === 'stock_number') &&
     mappings.some((m) => m.dbField === 'name');
 
   const { items: previewItems } = step === 'preview' ? buildItems() : { items: [] };
+
+  // For the header picker: show up to 8 raw rows, truncate cell values
+  const previewRawRows = rawRows.slice(0, 8);
+  const maxCols = Math.min(6, Math.max(...previewRawRows.map((r) => r.length)));
 
   return (
     <Dialog
@@ -243,26 +254,28 @@ export function ImportModal({ open, onClose, onImported }: Props) {
       size="2xl"
     >
       {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-6">
-        {(['upload', 'map', 'preview', 'done'] as Step[]).map((s, i) => {
-          const labels = ['Upload', 'Map Columns', 'Preview', 'Done'];
+      <div className="flex items-center gap-1.5 mb-6 overflow-x-auto">
+        {ALL_STEPS.map((s, i) => {
           const active = s === step;
-          const past = ['upload', 'map', 'preview', 'done'].indexOf(step) > i;
+          const past = ALL_STEPS.indexOf(step) > i;
           return (
-            <div key={s} className="flex items-center gap-2">
+            <div key={s} className="flex items-center gap-1.5 shrink-0">
               <div className={cn(
-                'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold',
+                'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0',
                 active ? 'bg-violet-500 text-white' : past ? 'bg-emerald-500 text-white' : 'bg-white/10 text-gray-500'
               )}>
-                {past ? <CheckCircle2 size={14} /> : i + 1}
+                {past ? <CheckCircle2 size={12} /> : i + 1}
               </div>
-              <span className={cn('text-xs', active ? 'text-white font-medium' : 'text-gray-500')}>{labels[i]}</span>
-              {i < 3 && <div className="w-6 h-px bg-white/10" />}
+              <span className={cn('text-xs whitespace-nowrap', active ? 'text-white font-medium' : 'text-gray-500')}>
+                {STEP_LABELS[s]}
+              </span>
+              {i < ALL_STEPS.length - 1 && <div className="w-4 h-px bg-white/10 shrink-0" />}
             </div>
           );
         })}
       </div>
 
+      {/* ── Upload ── */}
       {step === 'upload' && (
         <div className="space-y-5">
           <div>
@@ -275,24 +288,15 @@ export function ImportModal({ open, onClose, onImported }: Props) {
                   onClick={() => setMode(m.value)}
                   className={cn(
                     'flex items-start gap-3 w-full rounded-xl border px-4 py-3 text-left transition-all',
-                    mode === m.value
-                      ? 'border-violet-500/60 bg-violet-500/10'
-                      : 'border-white/8 bg-white/3 hover:bg-white/6'
+                    mode === m.value ? 'border-violet-500/60 bg-violet-500/10' : 'border-white/8 bg-white/3 hover:bg-white/6'
                   )}
                 >
-                  <span className={cn('mt-0.5 shrink-0', mode === m.value ? 'text-violet-400' : 'text-gray-500')}>
-                    {m.icon}
-                  </span>
+                  <span className={cn('mt-0.5 shrink-0', mode === m.value ? 'text-violet-400' : 'text-gray-500')}>{m.icon}</span>
                   <div className="flex-1 min-w-0">
-                    <p className={cn('text-sm font-semibold', mode === m.value ? 'text-white' : 'text-gray-300')}>
-                      {m.label}
-                    </p>
+                    <p className={cn('text-sm font-semibold', mode === m.value ? 'text-white' : 'text-gray-300')}>{m.label}</p>
                     <p className="text-xs text-gray-500 mt-0.5">{m.hint}</p>
                   </div>
-                  <div className={cn(
-                    'w-4 h-4 rounded-full border-2 shrink-0 mt-1 transition-all',
-                    mode === m.value ? 'border-violet-400 bg-violet-400' : 'border-white/20'
-                  )} />
+                  <div className={cn('w-4 h-4 rounded-full border-2 shrink-0 mt-1 transition-all', mode === m.value ? 'border-violet-400 bg-violet-400' : 'border-white/20')} />
                 </button>
               ))}
             </div>
@@ -301,7 +305,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
-            onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) processFile(f, mode); }}
+            onDrop={onDrop}
             onClick={() => fileRef.current?.click()}
             className={cn(
               'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all',
@@ -313,42 +317,114 @@ export function ImportModal({ open, onClose, onImported }: Props) {
               type="file"
               accept=".csv,.xlsx,.xls"
               className="hidden"
-              onChange={(e) => { if (e.target.files?.[0]) processFile(e.target.files[0], mode); }}
+              onChange={(e) => { if (e.target.files?.[0]) processFile(e.target.files[0]); }}
             />
             <Upload size={28} className="mx-auto mb-3 text-gray-500" />
             <p className="text-sm font-medium text-gray-300">Drop your file here, or tap to browse</p>
             <p className="mt-1 text-xs text-gray-500">Supports .csv, .xlsx, .xls</p>
           </div>
+        </div>
+      )}
 
-          <div className="flex items-start gap-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20 px-3 py-2.5">
-            <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
-            <div className="text-xs text-amber-300 space-y-0.5">
-              <p className="font-medium">Column headings must be on row 1</p>
-              <p className="text-amber-400/70">Remove any title rows, merged cells, or blank rows above your headers. Row 1 should contain only the column names (e.g. Stock Number, Name, Quantity) with data starting on row 2.</p>
-            </div>
+      {/* ── Header Row Picker ── */}
+      {step === 'header' && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start gap-2.5 rounded-xl bg-violet-500/8 border border-violet-500/20 px-3 py-2.5">
+            <AlertCircle size={14} className="text-violet-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-violet-300">
+              Click the row that contains your <strong>column headings</strong>. Rows above it will be skipped; rows below become data.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-white/10">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-white/5 border-b border-white/8">
+                  <th className="px-3 py-2 text-left text-gray-500 font-medium w-12">Row</th>
+                  {Array.from({ length: maxCols }).map((_, ci) => (
+                    <th key={ci} className="px-3 py-2 text-left text-gray-600 font-normal">col {ci + 1}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRawRows.map((row, ri) => {
+                  const isSelected = ri === headerRowIdx;
+                  const isAbove = ri < headerRowIdx;
+                  return (
+                    <tr
+                      key={ri}
+                      onClick={() => setHeaderRowIdx(ri)}
+                      className={cn(
+                        'border-t border-white/5 cursor-pointer transition-colors',
+                        isSelected
+                          ? 'bg-violet-500/15 hover:bg-violet-500/20'
+                          : isAbove
+                          ? 'opacity-40 hover:bg-white/3'
+                          : 'hover:bg-white/3'
+                      )}
+                    >
+                      <td className="px-3 py-2 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-600 tabular-nums w-4">{ri + 1}</span>
+                          {isSelected && (
+                            <span className="text-[9px] font-bold uppercase tracking-wide text-violet-400 bg-violet-500/20 rounded px-1 py-0.5 whitespace-nowrap">
+                              headers
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {Array.from({ length: maxCols }).map((_, ci) => {
+                        const cell = String(row[ci] ?? '').trim();
+                        return (
+                          <td
+                            key={ci}
+                            className={cn(
+                              'px-3 py-2 max-w-[120px] truncate',
+                              isSelected ? 'text-white font-medium' : isAbove ? 'text-gray-500' : 'text-gray-400'
+                            )}
+                          >
+                            {cell || <span className="text-gray-700 italic">empty</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {rawRows.length > 8 && (
+                  <tr className="border-t border-white/5">
+                    <td colSpan={maxCols + 1} className="px-3 py-2 text-center text-gray-600 text-[10px]">
+                      … {rawRows.length - 8} more rows not shown
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-xs text-gray-500">
+            Row <strong className="text-violet-400">{headerRowIdx + 1}</strong> selected as header ·{' '}
+            <strong className="text-white">{rawRows.length - headerRowIdx - 1}</strong> data rows will be imported
+          </p>
+
+          <div className="flex gap-3 justify-end pt-2 border-t border-white/8">
+            <Button variant="ghost" onClick={reset}>Back</Button>
+            <Button onClick={confirmHeaderRow}>Use row {headerRowIdx + 1} as headers →</Button>
           </div>
         </div>
       )}
 
+      {/* ── Map Columns ── */}
       {step === 'map' && (
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-gray-400">{rows.length} rows found. Map your columns to the correct fields.</p>
-
-          {titleRowWarning && (
-            <div className="flex items-start gap-2.5 rounded-xl bg-red-500/10 border border-red-500/30 px-3 py-2.5">
-              <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
-              <div className="text-xs text-red-300 space-y-1">
-                <p className="font-medium">Row 1 looks like a title row, not column headers</p>
-                <p className="text-red-400/80">None of the detected column names match known fields. Your file may have a title or description row above the actual column headers. Open the file, delete any rows before the header row, and re-upload so that column names (e.g. <em>Stock Number</em>, <em>Name</em>, <em>Quantity</em>) appear on row 1.</p>
-              </div>
-            </div>
-          )}
+          <p className="text-sm text-gray-400">{rows.length} data rows found. Map your columns to the correct fields.</p>
           <div className="space-y-2">
             {mappings.map((m) => (
               <div key={m.csvColumn} className="flex items-center gap-3">
                 <div className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-300 font-mono truncate">
                   {m.csvColumn}
-                  <span className="ml-2 text-gray-600">{rows[0]?.[m.csvColumn] ? `"${String(rows[0][m.csvColumn]).slice(0, 20)}"` : ''}</span>
+                  <span className="ml-2 text-gray-600">
+                    {rows[0]?.[m.csvColumn] ? `"${String(rows[0][m.csvColumn]).slice(0, 20)}"` : ''}
+                  </span>
                 </div>
                 <span className="text-gray-600 text-sm">→</span>
                 <div className="flex-1">
@@ -367,12 +443,13 @@ export function ImportModal({ open, onClose, onImported }: Props) {
             </div>
           )}
           <div className="flex gap-3 justify-end pt-2 border-t border-white/8 sticky bottom-0 bg-gray-900 pb-1">
-            <Button variant="ghost" onClick={reset}>Back</Button>
+            <Button variant="ghost" onClick={() => setStep('header')}>Back</Button>
             <Button onClick={() => setStep('preview')} disabled={!requiredMapped}>Preview →</Button>
           </div>
         </div>
       )}
 
+      {/* ── Preview ── */}
       {step === 'preview' && (
         <div className="flex flex-col gap-4">
           <p className="text-sm text-gray-400">Preview of first 5 rows. Ready to import {rows.length} items.</p>
@@ -408,8 +485,8 @@ export function ImportModal({ open, onClose, onImported }: Props) {
             mode === 'release' ? 'bg-amber-500/10 text-amber-300' :
             'bg-white/5 text-gray-400'
           )}>
-            {MODES.find(m => m.value === mode)?.icon}
-            <span><strong>{MODES.find(m => m.value === mode)?.label}:</strong> {MODES.find(m => m.value === mode)?.hint}</span>
+            {MODES.find((m) => m.value === mode)?.icon}
+            <span><strong>{MODES.find((m) => m.value === mode)?.label}:</strong> {MODES.find((m) => m.value === mode)?.hint}</span>
           </div>
 
           <div className="flex gap-3 justify-end pt-2 border-t border-white/8 sticky bottom-0 bg-gray-900 pb-1">
@@ -421,6 +498,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
         </div>
       )}
 
+      {/* ── Done ── */}
       {step === 'done' && result && (
         <div className="text-center py-4 space-y-4">
           <CheckCircle2 size={40} className="mx-auto text-emerald-400" />
@@ -438,7 +516,7 @@ export function ImportModal({ open, onClose, onImported }: Props) {
             )}
           </div>
           <div className="flex gap-3 justify-center">
-            <Button variant="ghost" onClick={() => { reset(); }}>Import More</Button>
+            <Button variant="ghost" onClick={reset}>Import More</Button>
             <Button onClick={() => { reset(); onClose(); }}>Done</Button>
           </div>
         </div>

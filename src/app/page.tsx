@@ -47,6 +47,7 @@ export default function HomePage() {
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [countSheetOpen, setCountSheetOpen] = useState(false);
   const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [globalStats, setGlobalStats] = useState<{ total: number; in_stock: number; low_stock: number; mismatches: number } | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [racks, setRacks] = useState<string[]>([]);
@@ -82,17 +83,19 @@ export default function HomePage() {
 
   const fetchDistinct = useCallback(async () => {
     if (!dbReady) return;
-    const [catRes, locRes, rackRes, countRes] = await Promise.all([
+    const [catRes, locRes, rackRes, countRes, statsRes] = await Promise.all([
       fetch('/api/stock?distinct=category'),
       fetch('/api/stock?distinct=location'),
       fetch('/api/stock?distinct=rack_number'),
       fetch('/api/stock?count=true'),
+      fetch('/api/stock?stats=true'),
     ]);
-    const [cat, loc, rack, countJson] = await Promise.all([catRes.json(), locRes.json(), rackRes.json(), countRes.json()]);
+    const [cat, loc, rack, countJson, statsJson] = await Promise.all([catRes.json(), locRes.json(), rackRes.json(), countRes.json(), statsRes.json()]);
     setCategories(cat.values ?? []);
     setLocations(loc.values ?? []);
     setRacks(rack.values ?? []);
     setTotalCount(countJson.count ?? null);
+    setGlobalStats(statsJson.stats ?? null);
   }, [dbReady]);
 
   useEffect(() => {
@@ -117,9 +120,9 @@ export default function HomePage() {
 
   const stats = {
     total: items.length,
-    inStock: items.filter((i) => i.status === 'in-stock').length,
-    lowStock: items.filter((i) => i.status === 'low-stock').length,
-    mismatches: items.filter((i) => i.quantity_mismatch).length,
+    inStock: globalStats?.in_stock ?? items.filter((i) => i.status === 'in-stock').length,
+    lowStock: globalStats?.low_stock ?? items.filter((i) => i.status === 'low-stock').length,
+    mismatches: globalStats?.mismatches ?? items.filter((i) => i.quantity_mismatch).length,
   };
 
   const setStatFilter = (patch: Partial<StockFilters>) =>
@@ -306,7 +309,7 @@ export default function HomePage() {
         locations={locations}
       />
 
-      <QuickAdjust item={quickItem} onClose={() => setQuickItem(null)} onSaved={refresh} />
+      <QuickAdjust item={quickItem} onClose={() => setQuickItem(null)} onSaved={refresh} locations={locations} />
 
       <ImportModal
         open={importOpen}
