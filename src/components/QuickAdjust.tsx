@@ -159,7 +159,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
                 )}
               </div>
             </div>
-            <button onClick={onClose} className="p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-white/8">
+            <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-white/8">
               <X size={16} />
             </button>
           </div>
@@ -168,6 +168,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
           <div className="grid grid-cols-4 gap-2">
             {TYPES.map((t) => (
               <button
+                type="button"
                 key={t.value}
                 onClick={() => handleTypeChange(t.value)}
                 className={cn(
@@ -185,6 +186,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
 
           {/* Move Location — separate action */}
           <button
+            type="button"
             onClick={() => handleTypeChange('move' as AdjustType)}
             className={cn(
               'flex items-center justify-center gap-2 w-full rounded-xl px-3 py-2.5 border transition-all text-sm',
@@ -277,6 +279,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
               </label>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setAmount(String(Math.max(0, num - 1)))}
                   className="w-11 h-11 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center text-gray-300 hover:bg-white/15 active:scale-95 transition-all text-xl font-bold shrink-0"
                 >
@@ -291,6 +294,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
                   className="flex-1 text-center font-bold bg-white/5 border border-white/10 rounded-xl py-2 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50"
                 />
                 <button
+                  type="button"
                   onClick={() => setAmount(String(num + 1))}
                   className="w-11 h-11 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center text-gray-300 hover:bg-white/15 active:scale-95 transition-all text-xl font-bold shrink-0"
                 >

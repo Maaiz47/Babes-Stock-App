@@ -84,19 +84,23 @@ export default function HomePage() {
 
   const fetchDistinct = useCallback(async () => {
     if (!dbReady) return;
-    const [catRes, locRes, rackRes, countRes, statsRes] = await Promise.all([
-      fetch('/api/stock?distinct=category'),
-      fetch('/api/stock?distinct=location'),
-      fetch('/api/stock?distinct=rack_number'),
-      fetch('/api/stock?count=true'),
-      fetch('/api/stock?stats=true'),
-    ]);
-    const [cat, loc, rack, countJson, statsJson] = await Promise.all([catRes.json(), locRes.json(), rackRes.json(), countRes.json(), statsRes.json()]);
-    setCategories(cat.values ?? []);
-    setLocations(loc.values ?? []);
-    setRacks(rack.values ?? []);
-    setTotalCount(countJson.count ?? null);
-    setGlobalStats(statsJson.stats ?? null);
+    try {
+      const [catRes, locRes, rackRes, countRes, statsRes] = await Promise.all([
+        fetch('/api/stock?distinct=category'),
+        fetch('/api/stock?distinct=location'),
+        fetch('/api/stock?distinct=rack_number'),
+        fetch('/api/stock?count=true'),
+        fetch('/api/stock?stats=true'),
+      ]);
+      const [cat, loc, rack, countJson, statsJson] = await Promise.all([catRes.json(), locRes.json(), rackRes.json(), countRes.json(), statsRes.json()]);
+      setCategories(cat.values ?? []);
+      setLocations(loc.values ?? []);
+      setRacks(rack.values ?? []);
+      setTotalCount(countJson.count ?? null);
+      setGlobalStats(statsJson.stats ?? null);
+    } catch {
+      // supplementary data — silently ignore failures
+    }
   }, [dbReady]);
 
   useEffect(() => {
@@ -237,6 +241,7 @@ export default function HomePage() {
             {currentUser && (
               <div className="hidden sm:flex items-center gap-2 mr-1">
                 <button
+                  type="button"
                   onClick={() => router.push('/settings')}
                   className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors px-2 py-1 rounded-lg hover:bg-white/8"
                 >
@@ -299,6 +304,7 @@ export default function HomePage() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {statCards.map(({ label, value, icon: Icon, color, onClick, active }, i) => (
               <button
+                type="button"
                 key={label}
                 onClick={onClick}
                 className={cn(
