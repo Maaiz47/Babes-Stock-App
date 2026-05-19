@@ -219,7 +219,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
             <Input {...register('rack_number')} placeholder="e.g. A-12" />
           </Field>
           <Field label="Status">
-            <Select {...register('status')} value={status}>
+            <Select {...register('status')}>
               <option value="in-stock">In Stock</option>
               <option value="low-stock">Low Stock</option>
               <option value="reserved">Reserved</option>
