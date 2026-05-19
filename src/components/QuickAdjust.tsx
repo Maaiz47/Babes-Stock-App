@@ -194,7 +194,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
             )}
           >
             <ArrowRightLeft size={14} />
-            <span className="font-medium">Move to Different Location</span>
+            <span className="font-medium">{item.location ? 'Move to Different Location' : 'Set Location'}</span>
           </button>
 
           {/* Taken by — only for Remove */}
@@ -224,15 +224,26 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
           )}
 
           {type === 'move' && (
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Current location: <strong className="text-gray-300">{item.location || '(none)'}</strong></p>
-              <label className="text-xs font-medium text-indigo-400 mb-1.5 block">New location</label>
+            <div className="space-y-2">
+              {item.location ? (
+                <p className="text-xs text-gray-500">
+                  Current location: <strong className="text-gray-300">{item.location}</strong>
+                </p>
+              ) : (
+                <div className="flex items-start gap-2 rounded-lg bg-amber-500/8 border border-amber-500/20 px-3 py-2">
+                  <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-300">This item has no location set. Select an existing location or type a new one.</p>
+                </div>
+              )}
+              <label className="text-xs font-medium text-indigo-400 block">
+                {item.location ? 'Move to' : 'Set location'}
+              </label>
               <input
                 type="text"
                 list="move-locations-list"
                 value={newLocation}
                 onChange={(e) => setNewLocation(e.target.value)}
-                placeholder="Enter or select location…"
+                placeholder={item.location ? 'Choose or type a location…' : 'e.g. Warehouse A'}
                 style={{ fontSize: '16px' }}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
               />
@@ -360,7 +371,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
               onClick={wouldGoNegative && !confirmNegative ? () => setConfirmNegative(false) : submit}
               disabled={saving || (type === 'subtract' && !takenBy.trim()) || (type === 'move' && (!newLocation.trim() || newLocation.trim() === item.location))}
             >
-              {saving ? 'Saving…' : `Confirm ${activeType.label}`}
+              {saving ? 'Saving…' : type === 'move' && !item.location ? 'Set Location' : `Confirm ${activeType.label}`}
             </Button>
           )}
           {type === 'subtract' && !takenBy.trim() && (
