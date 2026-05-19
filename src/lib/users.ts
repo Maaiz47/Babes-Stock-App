@@ -25,8 +25,9 @@ function mapUser(row: Record<string, unknown>): User {
 }
 
 export async function getUserByIdentifier(identifier: string): Promise<User | null> {
+  const lower = identifier.toLowerCase();
   const result = await sql`
-    SELECT * FROM users WHERE username = ${identifier} OR email = ${identifier} LIMIT 1
+    SELECT * FROM users WHERE username = ${lower} OR email = ${lower} LIMIT 1
   `;
   return result.rows.length > 0 ? mapUser(result.rows[0]) : null;
 }
@@ -60,7 +61,8 @@ export async function createUser(username: string, email: string, password: stri
 
 export async function updateUserPassword(userId: string, newPassword: string): Promise<void> {
   const password_hash = await hash(newPassword, 10);
-  await sql`UPDATE users SET password_hash = ${password_hash}, updated_at = NOW() WHERE id = ${userId}`;
+  const result = await sql`UPDATE users SET password_hash = ${password_hash}, updated_at = NOW() WHERE id = ${userId}`;
+  if (result.rowCount === 0) throw new Error(`User ${userId} not found — password not updated`);
 }
 
 export async function deleteUser(userId: string): Promise<void> {
