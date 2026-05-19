@@ -354,7 +354,7 @@ export async function adjustQuantity(
     // Mirror the change on physical stock too
     newPhysical = (current.physical_quantity ?? current.quantity) + amount;
   } else if (type === 'subtract') {
-    newQty = Math.max(0, current.quantity - amount);
+    newQty = current.quantity - amount;
     newPhysical = Math.max(0, (current.physical_quantity ?? current.quantity) - amount);
   } else if (type === 'set_system') {
     newQty = amount;

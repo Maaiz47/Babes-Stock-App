@@ -35,6 +35,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
   const [takenBy, setTakenBy] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [confirmNegative, setConfirmNegative] = useState(false);
 
   useEffect(() => {
     if (item) {
@@ -47,6 +48,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
 
   const handleTypeChange = (t: AdjustType) => {
     setType(t);
+    setConfirmNegative(false);
     if (item) setAmount(defaultAmount(t, item));
   };
 
@@ -57,7 +59,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
   const newSystemQty = type === 'add'
     ? item.quantity + num
     : type === 'subtract'
-    ? Math.max(0, item.quantity - num)
+    ? item.quantity - num
     : type === 'set_system'
     ? num
     : item.quantity;
@@ -72,6 +74,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
 
   const systemChanged = newSystemQty !== item.quantity;
   const physicalMismatch = newPhysical != null && newPhysical !== newSystemQty;
+  const wouldGoNegative = type === 'subtract' && newSystemQty < 0;
 
   const submit = async () => {
     setSaving(true);
@@ -225,7 +228,12 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
                 </span>
               </div>
             )}
-            {physicalMismatch && (
+            {newSystemQty < 0 && (
+              <p className="text-xs text-red-400 flex items-center gap-1 pt-0.5 border-t border-white/8">
+                <AlertTriangle size={11} /> System qty goes negative — item will be flagged as mismatch
+              </p>
+            )}
+            {physicalMismatch && newSystemQty >= 0 && (
               <p className="text-xs text-amber-400 flex items-center gap-1 pt-0.5 border-t border-white/8">
                 <AlertTriangle size={11} /> Physical and system will not match — flagged as mismatch
               </p>
@@ -247,15 +255,34 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
             />
           </div>
 
-          <Button
-            className="w-full"
-            size="lg"
-            variant={type === 'subtract' ? 'destructive' : type === 'add' ? 'success' : 'default'}
-            onClick={submit}
-            disabled={saving || (type === 'subtract' && !takenBy.trim())}
-          >
-            {saving ? 'Saving…' : `Confirm ${activeType.label}`}
-          </Button>
+          {wouldGoNegative && !confirmNegative && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/8 px-4 py-3 space-y-3">
+              <p className="text-sm text-red-300 font-medium flex items-center gap-2">
+                <AlertTriangle size={15} />
+                Stock will go to {newSystemQty} — below zero
+              </p>
+              <p className="text-xs text-gray-400">This flags a mismatch and records the removal, but the system quantity will be negative. Only proceed if the stock was actually taken.</p>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" className="flex-1" onClick={() => setConfirmNegative(false)}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" size="sm" className="flex-1" onClick={() => setConfirmNegative(true)}>
+                  Yes, proceed
+                </Button>
+              </div>
+            </div>
+          )}
+          {(!wouldGoNegative || confirmNegative) && (
+            <Button
+              className="w-full"
+              size="lg"
+              variant={type === 'subtract' ? 'destructive' : type === 'add' ? 'success' : 'default'}
+              onClick={wouldGoNegative && !confirmNegative ? () => setConfirmNegative(false) : submit}
+              disabled={saving || (type === 'subtract' && !takenBy.trim())}
+            >
+              {saving ? 'Saving…' : `Confirm ${activeType.label}`}
+            </Button>
+          )}
           {type === 'subtract' && !takenBy.trim() && (
             <p className="text-xs text-center text-red-400 -mt-2">Enter who is taking the stock to continue</p>
           )}
