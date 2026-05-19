@@ -173,29 +173,6 @@ export default function HomePage() {
           'fixed inset-0 z-[100] bg-[#080810] overflow-hidden transition-opacity duration-500',
           splashPhase === 'fade' ? 'opacity-0 pointer-events-none' : 'opacity-100'
         )}>
-          <style>{`
-            @keyframes splash-drop {
-              0%   { transform: translateY(-110vh) rotate(calc(var(--twist) * 0.4)); }
-              70%  { transform: translateY(0) rotate(var(--twist)); animation-timing-function: ease-out; }
-              77%  { transform: translateY(-26px) rotate(calc(var(--twist) * 1.12)); animation-timing-function: ease-in; }
-              85%  { transform: translateY(0) rotate(var(--twist)); animation-timing-function: ease-out; }
-              90%  { transform: translateY(-9px) rotate(calc(var(--twist) * 0.95)); animation-timing-function: ease-in; }
-              95%  { transform: translateY(0) rotate(var(--twist)); }
-              98%  { transform: translateY(-2px) rotate(var(--twist)); }
-              100% { transform: translateY(0) rotate(var(--twist)); }
-            }
-            @keyframes splash-fade-up {
-              from { opacity: 0; transform: translateY(10px); }
-              to   { opacity: 1; transform: translateY(0); }
-            }
-            .sbox {
-              position: absolute;
-              user-select: none;
-              line-height: 1;
-              animation: splash-drop 1s ease-in both;
-            }
-          `}</style>
-
           {([
             { left:  '1%', top: '76%', size: 60, delay: 0.04, twist: '-23deg' },
             { left: '13%', top: '80%', size: 48, delay: 0.19, twist:  '18deg' },
