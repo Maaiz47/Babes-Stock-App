@@ -17,10 +17,10 @@ interface Props {
 }
 
 const TYPES: { value: AdjustType; label: string; icon: React.ReactNode; activeColor: string; activeBg: string }[] = [
-  { value: 'subtract', label: 'Remove',      icon: <Minus size={15} />,       activeColor: 'text-red-400',    activeBg: 'border-red-500/40 bg-red-500/10' },
-  { value: 'add',      label: 'Add',         icon: <Plus size={15} />,        activeColor: 'text-emerald-400', activeBg: 'border-emerald-500/40 bg-emerald-500/10' },
-  { value: 'count',    label: 'Count',       icon: <ClipboardList size={15}/>, activeColor: 'text-amber-400',  activeBg: 'border-amber-500/40 bg-amber-500/10' },
-  { value: 'set_system', label: 'Set Qty',   icon: <Hash size={15} />,        activeColor: 'text-blue-400',   activeBg: 'border-blue-500/40 bg-blue-500/10' },
+  { value: 'subtract', label: 'Remove',    icon: <Minus size={15} />,        activeColor: 'text-red-400',     activeBg: 'border-red-500/40 bg-red-500/10' },
+  { value: 'add',      label: 'Add',       icon: <Plus size={15} />,         activeColor: 'text-emerald-400', activeBg: 'border-emerald-500/40 bg-emerald-500/10' },
+  { value: 'count',    label: 'Count',     icon: <ClipboardList size={15} />, activeColor: 'text-amber-400',  activeBg: 'border-amber-500/40 bg-amber-500/10' },
+  { value: 'set_system', label: 'Set Qty', icon: <Hash size={15} />,         activeColor: 'text-blue-400',   activeBg: 'border-blue-500/40 bg-blue-500/10' },
 ];
 
 function defaultAmount(type: AdjustType, item: StockItem): string {
@@ -124,18 +124,28 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 border-t border-white/10 rounded-t-2xl shadow-2xl animate-in slide-in-from-bottom-2 duration-200 max-h-[92dvh] overflow-y-auto">
-        <div className="flex justify-center pt-3 pb-1">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          'fixed z-50 bg-gray-900 border-white/10 shadow-2xl overflow-y-auto',
+          'bottom-0 left-0 right-0 border-t rounded-t-2xl max-h-[92dvh]',
+          'sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2',
+          'sm:w-full sm:max-w-md sm:border sm:rounded-2xl sm:max-h-[90dvh]',
+          'animate-in slide-in-from-bottom-2 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200'
+        )}
+      >
+        {/* Drag handle — mobile only */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className="w-10 h-1 rounded-full bg-white/20" />
         </div>
 
-        <div className="px-5 pb-8 space-y-4">
+        <div className="px-5 pb-6 pt-2 sm:pt-5 space-y-3">
           {/* Header */}
-          <div className="flex items-start justify-between pt-1">
+          <div className="flex items-start justify-between">
             <div>
               <p className="text-xs text-gray-500 font-mono">{item.stock_number}</p>
               <h3 className="text-base font-semibold text-white">{item.name}</h3>
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center gap-3 mt-0.5">
                 <span className="text-sm">
                   <span className="text-gray-500">System </span>
                   <strong className="text-white">{item.quantity}</strong>
@@ -161,7 +171,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
                 key={t.value}
                 onClick={() => handleTypeChange(t.value)}
                 className={cn(
-                  'flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 border transition-all',
+                  'flex flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 border transition-all',
                   type === t.value ? t.activeBg : 'border-white/8 bg-white/3 hover:bg-white/6'
                 )}
               >
@@ -195,7 +205,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
                 value={takenBy}
                 onChange={(e) => setTakenBy(e.target.value)}
                 placeholder="Who is taking this stock?"
-                autoFocus
+                style={{ fontSize: '16px' }}
               />
             </div>
           )}
@@ -208,7 +218,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
                 value={broughtBy}
                 onChange={(e) => setBroughtBy(e.target.value)}
                 placeholder="Who is bringing this stock? (optional)"
-                autoFocus
+                style={{ fontSize: '16px' }}
               />
             </div>
           )}
@@ -223,8 +233,8 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
                 value={newLocation}
                 onChange={(e) => setNewLocation(e.target.value)}
                 placeholder="Enter or select location…"
-                autoFocus
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
+                style={{ fontSize: '16px' }}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
               />
               <datalist id="move-locations-list">
                 {(locations ?? []).filter(l => l !== item.location).map(l => <option key={l} value={l} />)}
@@ -234,83 +244,84 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
 
           {/* Amount stepper */}
           {type !== 'move' && (
-          <div>
-            <label className="text-xs text-gray-500 mb-1.5 block">
-              {type === 'count' ? 'Physical count' : type === 'set_system' ? 'Set system quantity to' : 'Quantity'}
-            </label>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setAmount(String(Math.max(0, num - 1)))}
-                className="w-12 h-12 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center text-gray-300 hover:bg-white/15 active:scale-95 transition-all text-xl font-bold"
-              >
-                −
-              </button>
-              <input
-                type="number"
-                min={0}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="flex-1 text-center text-3xl font-bold bg-white/5 border border-white/10 rounded-xl py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50"
-              />
-              <button
-                onClick={() => setAmount(String(num + 1))}
-                className="w-12 h-12 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center text-gray-300 hover:bg-white/15 active:scale-95 transition-all text-xl font-bold"
-              >
-                +
-              </button>
+            <div>
+              <label className="text-xs text-gray-500 mb-1.5 block">
+                {type === 'count' ? 'Physical count' : type === 'set_system' ? 'Set system quantity to' : 'Quantity'}
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAmount(String(Math.max(0, num - 1)))}
+                  className="w-11 h-11 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center text-gray-300 hover:bg-white/15 active:scale-95 transition-all text-xl font-bold shrink-0"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min={0}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  style={{ fontSize: '24px' }}
+                  className="flex-1 text-center font-bold bg-white/5 border border-white/10 rounded-xl py-2 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                />
+                <button
+                  onClick={() => setAmount(String(num + 1))}
+                  className="w-11 h-11 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center text-gray-300 hover:bg-white/15 active:scale-95 transition-all text-xl font-bold shrink-0"
+                >
+                  +
+                </button>
+              </div>
             </div>
-          </div>
           )}
 
-          {/* Preview — always show, flag heavily if system changes */}
+          {/* Preview */}
           {type !== 'move' && (
-          <div className={cn(
-            'rounded-xl px-4 py-3 space-y-1.5 border',
-            systemChanged ? 'bg-red-500/8 border-red-500/20' : 'bg-white/4 border-white/8'
-          )}>
-            {type !== 'count' && (
-              <div className="flex items-center justify-between text-sm">
-                <span className={cn('font-medium', systemChanged ? 'text-red-300' : 'text-gray-400')}>
-                  {systemChanged && <AlertTriangle size={12} className="inline mr-1" />}
-                  System qty
-                </span>
-                <span>
-                  <span className="text-gray-500">{item.quantity}</span>
-                  <span className="text-gray-600 mx-1.5">→</span>
-                  <strong className={cn(
-                    type === 'add' ? 'text-emerald-400' :
-                    type === 'subtract' ? 'text-red-400' :
-                    'text-blue-400'
-                  )}>{newSystemQty}</strong>
-                </span>
-              </div>
-            )}
-            {newPhysical != null && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">Physical qty</span>
-                <span>
-                  <span className="text-gray-500">{item.physical_quantity ?? '—'}</span>
-                  <span className="text-gray-600 mx-1.5">→</span>
-                  <strong className={physicalMismatch ? 'text-amber-400' : 'text-emerald-400'}>{newPhysical}</strong>
-                </span>
-              </div>
-            )}
-            {newSystemQty < 0 && (
-              <p className="text-xs text-red-400 flex items-center gap-1 pt-0.5 border-t border-white/8">
-                <AlertTriangle size={11} /> System qty goes negative — item will be flagged as mismatch
-              </p>
-            )}
-            {physicalMismatch && newSystemQty >= 0 && (
-              <p className="text-xs text-amber-400 flex items-center gap-1 pt-0.5 border-t border-white/8">
-                <AlertTriangle size={11} /> Physical and system will not match — flagged as mismatch
-              </p>
-            )}
-            {type === 'set_system' && (
-              <p className="text-xs text-blue-300 flex items-center gap-1 pt-0.5 border-t border-white/8">
-                <AlertTriangle size={11} /> Direct system quantity override — use with care
-              </p>
-            )}
-          </div>
+            <div className={cn(
+              'rounded-xl px-4 py-3 space-y-1.5 border',
+              systemChanged ? 'bg-red-500/8 border-red-500/20' : 'bg-white/4 border-white/8'
+            )}>
+              {type !== 'count' && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className={cn('font-medium', systemChanged ? 'text-red-300' : 'text-gray-400')}>
+                    {systemChanged && <AlertTriangle size={12} className="inline mr-1" />}
+                    System qty
+                  </span>
+                  <span>
+                    <span className="text-gray-500">{item.quantity}</span>
+                    <span className="text-gray-600 mx-1.5">→</span>
+                    <strong className={cn(
+                      type === 'add' ? 'text-emerald-400' :
+                      type === 'subtract' ? 'text-red-400' :
+                      'text-blue-400'
+                    )}>{newSystemQty}</strong>
+                  </span>
+                </div>
+              )}
+              {newPhysical != null && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-400">Physical qty</span>
+                  <span>
+                    <span className="text-gray-500">{item.physical_quantity ?? '—'}</span>
+                    <span className="text-gray-600 mx-1.5">→</span>
+                    <strong className={physicalMismatch ? 'text-amber-400' : 'text-emerald-400'}>{newPhysical}</strong>
+                  </span>
+                </div>
+              )}
+              {newSystemQty < 0 && (
+                <p className="text-xs text-red-400 flex items-center gap-1 pt-0.5 border-t border-white/8">
+                  <AlertTriangle size={11} /> System qty goes negative — item will be flagged as mismatch
+                </p>
+              )}
+              {physicalMismatch && newSystemQty >= 0 && (
+                <p className="text-xs text-amber-400 flex items-center gap-1 pt-0.5 border-t border-white/8">
+                  <AlertTriangle size={11} /> Physical and system will not match — flagged as mismatch
+                </p>
+              )}
+              {type === 'set_system' && (
+                <p className="text-xs text-blue-300 flex items-center gap-1 pt-0.5 border-t border-white/8">
+                  <AlertTriangle size={11} /> Direct system quantity override — use with care
+                </p>
+              )}
+            </div>
           )}
 
           {/* Notes */}
@@ -320,6 +331,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Reason…"
+              style={{ fontSize: '16px' }}
             />
           </div>
 
