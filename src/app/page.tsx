@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { StockTable } from '@/components/StockTable';
 import { StockForm } from '@/components/StockForm';
 import { FilterPanel } from '@/components/FilterPanel';
@@ -13,7 +14,7 @@ import { useToast } from '@/components/ui/toast';
 import type { StockItem, StockFilters } from '@/lib/types';
 import {
   Plus, Upload, RefreshCw, Search, AlertTriangle,
-  Package, TrendingDown, Archive, HelpCircle
+  Package, TrendingDown, Archive, HelpCircle, LogOut, Shield, User
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatDate, STATUS_LABELS, cn } from '@/lib/utils';
@@ -26,8 +27,12 @@ const EMPTY_FILTERS: StockFilters = {
   mismatch_only: false,
 };
 
+interface SessionUser { userId: string; username: string; email: string; isAdmin: boolean; }
+
 export default function HomePage() {
   const { error: toastError } = useToast();
+  const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const [items, setItems] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbReady, setDbReady] = useState(false);
@@ -88,6 +93,9 @@ export default function HomePage() {
     setTotalCount(countJson.count ?? null);
   }, [dbReady]);
 
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => setCurrentUser(d.user));
+  }, []);
   useEffect(() => { initDB(); }, [initDB]);
   useEffect(() => { fetchItems(); }, [fetchItems]);
   useEffect(() => { fetchDistinct(); }, [fetchDistinct]);
@@ -156,11 +164,31 @@ export default function HomePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {currentUser && (
+              <div className="hidden sm:flex items-center gap-2 mr-1">
+                <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                  {currentUser.isAdmin ? <Shield size={12} className="text-violet-400" /> : <User size={12} />}
+                  <span className="text-gray-300">{currentUser.username}</span>
+                </div>
+                {currentUser.isAdmin && (
+                  <Button variant="ghost" size="sm" onClick={() => router.push('/admin')} className="text-xs h-7 px-2">
+                    Admin
+                  </Button>
+                )}
+              </div>
+            )}
             <Button variant="ghost" size="icon" onClick={() => setTutorialOpen(true)} title="Help & Tutorial">
               <HelpCircle size={15} />
             </Button>
             <Button variant="ghost" size="icon" onClick={refresh} title="Refresh">
               <RefreshCw size={15} />
+            </Button>
+            <Button
+              variant="ghost" size="icon"
+              title="Log out"
+              onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); router.push('/login'); }}
+            >
+              <LogOut size={15} />
             </Button>
             <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
               <Upload size={14} /> Import

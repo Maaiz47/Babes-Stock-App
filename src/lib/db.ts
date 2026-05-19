@@ -56,6 +56,41 @@ export async function initDB() {
   `;
   // Migration: add location column if it doesn't exist yet
   await sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS location TEXT`;
+
+  // Auth tables
+  await sql`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      is_admin BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT UNIQUE NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+  // Seed admin user if none exists (password: 123456, hashed)
+  // bcrypt hash of '123456' with 10 rounds
+  const adminCheck = await sql`SELECT id FROM users WHERE is_admin = true LIMIT 1`;
+  if (adminCheck.rows.length === 0) {
+    const { hash } = await import('bcryptjs');
+    const hash123456 = await hash('123456', 10);
+    await sql`
+      INSERT INTO users (username, email, password_hash, is_admin)
+      VALUES ('admin', 'admin@babesstock.com', ${hash123456}, true)
+      ON CONFLICT DO NOTHING
+    `;
+  }
 }
 
 function mapRow(row: Record<string, unknown>): StockItem {
