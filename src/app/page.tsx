@@ -51,6 +51,7 @@ export default function HomePage() {
   const [categories, setCategories] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [racks, setRacks] = useState<string[]>([]);
+  const [splashPhase, setSplashPhase] = useState<'show' | 'fade' | 'done'>('show');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const initDB = useCallback(async () => {
@@ -105,6 +106,15 @@ export default function HomePage() {
   useEffect(() => { fetchItems(); }, [fetchItems]);
   useEffect(() => { fetchDistinct(); }, [fetchDistinct]);
 
+  // Dismiss splash once DB is ready and first fetch is done
+  useEffect(() => {
+    if (dbReady && !loading && splashPhase === 'show') {
+      setSplashPhase('fade');
+      const t = setTimeout(() => setSplashPhase('done'), 500);
+      return () => clearTimeout(t);
+    }
+  }, [dbReady, loading, splashPhase]);
+
   // Poll every 30s for real-time feel
   useEffect(() => {
     if (!dbReady) return;
@@ -158,6 +168,21 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-[#080810]">
+      {splashPhase !== 'done' && (
+        <div className={cn(
+          'fixed inset-0 z-[100] bg-[#080810] flex flex-col items-center justify-center gap-4 transition-opacity duration-500',
+          splashPhase === 'fade' ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        )}>
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-2xl shadow-violet-500/40">
+            <Package size={30} className="text-white" />
+          </div>
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-white">Babes Stock</h1>
+            <p className="text-sm text-gray-500">Inventory Manager</p>
+          </div>
+          <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+        </div>
+      )}
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-white/8 bg-[#080810]/80 backdrop-blur-xl">
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">
@@ -258,29 +283,15 @@ export default function HomePage() {
 
         {/* Search + Filters */}
         <div className="flex gap-3">
-          <div className="flex-1">
-            <Input
-              icon={<Search size={14} />}
-              placeholder="Search by name, stock number, description…"
-              value={filters.search}
-              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-            />
-          </div>
+          <Input
+            icon={<Search size={14} />}
+            placeholder="Search by name, stock number, description…"
+            value={filters.search}
+            onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+          />
           {items.length > 0 && selectedIds.length === 0 && (filters.search || Object.values(filters).some(v => v !== '' && v !== false)) && (
             <Button variant="outline" size="sm" onClick={() => setSelectedIds(items.map(i => i.id))}>
               Select all {items.length}
-            </Button>
-          )}
-          {stats.mismatches > 0 && (
-            <Button
-              variant={filters.mismatch_only || !!filters.mismatch_type ? 'warning' : 'outline'}
-              size="sm"
-              onClick={() => setFilters((f) => ({ ...f, mismatch_only: !f.mismatch_only, mismatch_type: '' }))}
-            >
-              <AlertTriangle size={13} />
-              {stats.missing > 0 && `${stats.missing} missing`}
-              {stats.missing > 0 && stats.excess > 0 && ' · '}
-              {stats.excess > 0 && `${stats.excess} excess`}
             </Button>
           )}
         </div>
