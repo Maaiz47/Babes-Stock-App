@@ -6,6 +6,7 @@ export interface StockItem {
   name: string;
   description?: string;
   category?: string;
+  location?: string | null;
   rack_number?: string;
   quantity: number;
   physical_quantity?: number | null;
@@ -26,6 +27,7 @@ export interface StockItemInput {
   name: string;
   description?: string;
   category?: string;
+  location?: string | null;
   rack_number?: string;
   quantity: number;
   physical_quantity?: number | null;
@@ -42,6 +44,7 @@ export interface StockFilters {
   search: string;
   status: string;
   category: string;
+  location: string;
   rack_number: string;
   date_added_from: string;
   date_added_to: string;

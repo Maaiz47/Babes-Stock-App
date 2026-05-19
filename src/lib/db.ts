@@ -54,6 +54,8 @@ export async function initDB() {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_history_created ON stock_history(created_at DESC)
   `;
+  // Migration: add location column if it doesn't exist yet
+  await sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS location TEXT`;
 }
 
 function mapRow(row: Record<string, unknown>): StockItem {
@@ -65,6 +67,7 @@ function mapRow(row: Record<string, unknown>): StockItem {
     name: String(row.name),
     description: row.description ? String(row.description) : undefined,
     category: row.category ? String(row.category) : undefined,
+    location: row.location ? String(row.location) : null,
     rack_number: row.rack_number ? String(row.rack_number) : undefined,
     quantity: qty,
     physical_quantity: physQty,
@@ -101,6 +104,11 @@ export async function getStockItems(filters: Partial<StockFilters> = {}): Promis
   if (filters.category && filters.category !== 'all') {
     conditions.push(`category ILIKE $${idx}`);
     values.push(`%${filters.category}%`);
+    idx++;
+  }
+  if (filters.location && filters.location !== 'all') {
+    conditions.push(`location ILIKE $${idx}`);
+    values.push(`%${filters.location}%`);
     idx++;
   }
   if (filters.rack_number && filters.rack_number !== 'all') {
@@ -163,12 +171,12 @@ export async function getStockItem(id: string): Promise<StockItem | null> {
 export async function createStockItem(input: StockItemInput): Promise<StockItem> {
   const result = await sql`
     INSERT INTO stock_items (
-      stock_number, name, description, category, rack_number,
+      stock_number, name, description, category, location, rack_number,
       quantity, physical_quantity, status, date_added, date_removed,
       released_to, received_by, stored_by, notes
     ) VALUES (
       ${input.stock_number}, ${input.name}, ${input.description ?? null},
-      ${input.category ?? null}, ${input.rack_number ?? null},
+      ${input.category ?? null}, ${input.location ?? null}, ${input.rack_number ?? null},
       ${input.quantity}, ${input.physical_quantity ?? null},
       ${input.status}, ${input.date_added}, ${input.date_removed ?? null},
       ${input.released_to ?? null}, ${input.received_by ?? null},
@@ -185,7 +193,7 @@ export async function updateStockItem(id: string, input: Partial<StockItemInput>
   let idx = 1;
 
   const allowed: (keyof StockItemInput)[] = [
-    'stock_number', 'name', 'description', 'category', 'rack_number',
+    'stock_number', 'name', 'description', 'category', 'location', 'rack_number',
     'quantity', 'physical_quantity', 'status', 'date_added', 'date_removed',
     'released_to', 'received_by', 'stored_by', 'notes'
   ];
@@ -254,16 +262,14 @@ export async function bulkCreateStockItems(
   for (const item of items) {
     try {
       if (mode === 'count') {
-        // Stock count: for existing items only update physical_quantity (preserve system qty).
-        // For new items, set physical_quantity = quantity as best guess.
         const physQty = item.physical_quantity ?? item.quantity;
         await sql`
           INSERT INTO stock_items (
-            stock_number, name, description, category, rack_number,
+            stock_number, name, description, category, location, rack_number,
             quantity, physical_quantity, status, date_added, stored_by, notes
           ) VALUES (
             ${item.stock_number}, ${item.name}, ${item.description ?? null},
-            ${item.category ?? null}, ${item.rack_number ?? null},
+            ${item.category ?? null}, ${item.location ?? null}, ${item.rack_number ?? null},
             ${physQty}, ${physQty},
             ${item.status}, ${item.date_added}, ${item.stored_by ?? null}, ${item.notes ?? null}
           )
@@ -272,16 +278,14 @@ export async function bulkCreateStockItems(
             updated_at = NOW()
         `;
       } else if (mode === 'release') {
-        // Stock release: for existing items update system quantity, release fields, status.
-        // Preserve physical_quantity.
         await sql`
           INSERT INTO stock_items (
-            stock_number, name, description, category, rack_number,
+            stock_number, name, description, category, location, rack_number,
             quantity, physical_quantity, status, date_added, date_removed,
             released_to, received_by, stored_by, notes
           ) VALUES (
             ${item.stock_number}, ${item.name}, ${item.description ?? null},
-            ${item.category ?? null}, ${item.rack_number ?? null},
+            ${item.category ?? null}, ${item.location ?? null}, ${item.rack_number ?? null},
             ${item.quantity}, ${item.physical_quantity ?? null},
             'removed', ${item.date_added}, ${item.date_removed ?? null},
             ${item.released_to ?? null}, ${item.received_by ?? null},
@@ -297,15 +301,14 @@ export async function bulkCreateStockItems(
             updated_at = NOW()
         `;
       } else {
-        // General: full upsert or plain insert
         await sql`
           INSERT INTO stock_items (
-            stock_number, name, description, category, rack_number,
+            stock_number, name, description, category, location, rack_number,
             quantity, physical_quantity, status, date_added, date_removed,
             released_to, received_by, stored_by, notes
           ) VALUES (
             ${item.stock_number}, ${item.name}, ${item.description ?? null},
-            ${item.category ?? null}, ${item.rack_number ?? null},
+            ${item.category ?? null}, ${item.location ?? null}, ${item.rack_number ?? null},
             ${item.quantity}, ${item.physical_quantity ?? null},
             ${item.status}, ${item.date_added}, ${item.date_removed ?? null},
             ${item.released_to ?? null}, ${item.received_by ?? null},
@@ -315,6 +318,7 @@ export async function bulkCreateStockItems(
             name = EXCLUDED.name,
             description = EXCLUDED.description,
             category = EXCLUDED.category,
+            location = EXCLUDED.location,
             rack_number = EXCLUDED.rack_number,
             quantity = EXCLUDED.quantity,
             physical_quantity = EXCLUDED.physical_quantity,
@@ -341,7 +345,7 @@ export async function adjustQuantity(
   id: string,
   type: 'add' | 'subtract' | 'set_system' | 'count',
   amount: number,
-  opts?: { notes?: string; changed_by?: string; taken_by?: string }
+  opts?: { notes?: string; changed_by?: string; taken_by?: string; brought_by?: string }
 ): Promise<StockItem> {
   const current = await getStockItem(id);
   if (!current) throw new Error('Item not found');
@@ -365,12 +369,14 @@ export async function adjustQuantity(
   }
 
   const takenBy = type === 'subtract' && opts?.taken_by ? opts.taken_by : null;
+  const broughtBy = type === 'add' && opts?.brought_by ? opts.brought_by : null;
 
   const result = await sql`
     UPDATE stock_items SET
       quantity = ${newQty},
       physical_quantity = ${newPhysical},
       released_to = COALESCE(${takenBy}::text, released_to),
+      received_by = COALESCE(${broughtBy}::text, received_by),
       updated_at = NOW()
     WHERE id = ${id}
     RETURNING *
@@ -452,7 +458,7 @@ export async function bulkPhysicalCount(
   return { updated, errors };
 }
 
-export async function getDistinctValues(field: 'category' | 'rack_number' | 'stored_by' | 'released_to' | 'received_by'): Promise<string[]> {
+export async function getDistinctValues(field: 'category' | 'location' | 'rack_number' | 'stored_by' | 'released_to' | 'received_by'): Promise<string[]> {
   const result = await sql.query(
     `SELECT DISTINCT ${field} FROM stock_items WHERE ${field} IS NOT NULL AND ${field} != '' ORDER BY ${field}`,
     []

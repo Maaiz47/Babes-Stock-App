@@ -55,6 +55,7 @@ export function BulkActions({ selectedIds, allItems, onDone, onClearSelection }:
       'Name': r.name,
       'Description': r.description ?? '',
       'Category': r.category ?? '',
+      'Location': r.location ?? '',
       'Rack Number': r.rack_number ?? '',
       'Quantity': r.quantity,
       'Physical Count': r.physical_quantity ?? '',

@@ -7,8 +7,8 @@ import { Badge } from './ui/badge';
 import { Dialog } from './ui/dialog';
 import { useToast } from './ui/toast';
 import {
-  Pencil, Trash2, AlertTriangle, ChevronUp, ChevronDown,
-  ChevronsUpDown, MapPin, Package
+  Pencil, Trash2, Copy, AlertTriangle, ChevronUp, ChevronDown,
+  ChevronsUpDown, MapPin, Building2, Package
 } from 'lucide-react';
 
 type SortKey = keyof Pick<StockItem, 'stock_number' | 'name' | 'quantity' | 'status' | 'date_added' | 'date_removed' | 'rack_number' | 'category'>;
@@ -20,11 +20,12 @@ interface Props {
   selectedIds: string[];
   onSelectChange: (ids: string[]) => void;
   onEdit: (item: StockItem) => void;
+  onDuplicate: (item: StockItem) => void;
   onQuickAdjust: (item: StockItem) => void;
   onRefresh: () => void;
 }
 
-export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit, onQuickAdjust, onRefresh }: Props) {
+export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit, onDuplicate, onQuickAdjust, onRefresh }: Props) {
   const { success, error: toastError } = useToast();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -134,7 +135,7 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
               <ColHeader label="Stock #" sortK="stock_number" />
               <ColHeader label="Name" sortK="name" />
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide hidden md:table-cell">Category</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide hidden md:table-cell">Rack</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide hidden md:table-cell">Location / Rack</th>
               <ColHeader label="Qty" sortK="quantity" />
               <ColHeader label="Status" sortK="status" />
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide hidden sm:table-cell">Date Added</th>
@@ -205,9 +206,16 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                   </td>
                   <td className="px-3 py-3 text-gray-400 text-xs hidden md:table-cell">{item.category || '—'}</td>
                   <td className="px-3 py-3 hidden md:table-cell">
-                    {item.rack_number
-                      ? <span className="inline-flex items-center gap-1 text-xs text-gray-300"><MapPin size={11} className="text-gray-500" />{item.rack_number}</span>
-                      : <span className="text-gray-600">—</span>}
+                    <div className="flex flex-col gap-0.5">
+                      {item.location && (
+                        <span className="inline-flex items-center gap-1 text-xs text-violet-300">
+                          <Building2 size={10} className="text-violet-500 shrink-0" />{item.location}
+                        </span>
+                      )}
+                      {item.rack_number
+                        ? <span className="inline-flex items-center gap-1 text-xs text-gray-400"><MapPin size={10} className="text-gray-600 shrink-0" />{item.rack_number}</span>
+                        : !item.location && <span className="text-gray-600">—</span>}
+                    </div>
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-2">
@@ -233,6 +241,15 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                     <div className="flex items-center gap-1 justify-end">
                       <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); onEdit(item); }}>
                         <Pencil size={13} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-gray-600 hover:text-violet-400 hover:bg-violet-500/10"
+                        title="Duplicate item"
+                        onClick={(e) => { e.stopPropagation(); onDuplicate(item); }}
+                      >
+                        <Copy size={13} />
                       </Button>
                       <Button
                         variant="ghost"

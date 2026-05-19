@@ -33,6 +33,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
   const [type, setType] = useState<AdjustType>('subtract');
   const [amount, setAmount] = useState('1');
   const [takenBy, setTakenBy] = useState('');
+  const [broughtBy, setBroughtBy] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmNegative, setConfirmNegative] = useState(false);
@@ -42,6 +43,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
       setType('subtract');
       setAmount('1');
       setTakenBy('');
+      setBroughtBy('');
       setNotes('');
     }
   }, [item?.id]);
@@ -49,6 +51,8 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
   const handleTypeChange = (t: AdjustType) => {
     setType(t);
     setConfirmNegative(false);
+    setTakenBy('');
+    setBroughtBy('');
     if (item) setAmount(defaultAmount(t, item));
   };
 
@@ -86,6 +90,7 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
           type,
           amount: num,
           taken_by: takenBy || undefined,
+          brought_by: broughtBy || undefined,
           notes: notes || undefined,
         }),
       });
@@ -163,6 +168,19 @@ export function QuickAdjust({ item, onClose, onSaved }: Props) {
                 value={takenBy}
                 onChange={(e) => setTakenBy(e.target.value)}
                 placeholder="Who is taking this stock?"
+                autoFocus
+              />
+            </div>
+          )}
+
+          {/* Brought by — only for Add */}
+          {type === 'add' && (
+            <div>
+              <label className="text-xs font-medium text-emerald-400 mb-1.5 block">Brought by</label>
+              <Input
+                value={broughtBy}
+                onChange={(e) => setBroughtBy(e.target.value)}
+                placeholder="Who is bringing this stock? (optional)"
                 autoFocus
               />
             </div>

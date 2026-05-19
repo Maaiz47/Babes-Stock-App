@@ -9,7 +9,7 @@ import { SlidersHorizontal, X, AlertTriangle, ChevronDown, ChevronUp } from 'luc
 import { cn } from '@/lib/utils';
 
 const EMPTY: StockFilters = {
-  search: '', status: '', category: '', rack_number: '',
+  search: '', status: '', category: '', location: '', rack_number: '',
   date_added_from: '', date_added_to: '',
   date_removed_from: '', date_removed_to: '',
   stored_by: '', released_to: '', received_by: '',
@@ -20,10 +20,11 @@ interface Props {
   filters: StockFilters;
   onChange: (f: StockFilters) => void;
   categories: string[];
+  locations: string[];
   racks: string[];
 }
 
-export function FilterPanel({ filters, onChange, categories, racks }: Props) {
+export function FilterPanel({ filters, onChange, categories, locations, racks }: Props) {
   const [open, setOpen] = useState(false);
 
   const activeCount = Object.entries(filters).filter(([k, v]) => {
@@ -56,7 +57,7 @@ export function FilterPanel({ filters, onChange, categories, racks }: Props) {
 
       {open && (
         <div className="px-4 pb-4 space-y-4 border-t border-white/8 pt-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Status</label>
               <Select value={filters.status} onChange={(e) => set('status', e.target.value)}>
@@ -65,6 +66,13 @@ export function FilterPanel({ filters, onChange, categories, racks }: Props) {
                 <option value="low-stock">Low Stock</option>
                 <option value="reserved">Reserved</option>
                 <option value="removed">Removed</option>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Location</label>
+              <Select value={filters.location} onChange={(e) => set('location', e.target.value)}>
+                <option value="">All Locations</option>
+                {locations.map((l) => <option key={l} value={l}>{l}</option>)}
               </Select>
             </div>
             <div>

@@ -6,19 +6,20 @@ import { FilterPanel } from '@/components/FilterPanel';
 import { BulkActions } from '@/components/BulkActions';
 import { ImportModal } from '@/components/ImportModal';
 import { QuickAdjust } from '@/components/QuickAdjust';
+import { TutorialModal } from '@/components/TutorialModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import type { StockItem, StockFilters } from '@/lib/types';
 import {
   Plus, Upload, RefreshCw, Search, AlertTriangle,
-  Package, TrendingDown, Archive, Clock
+  Package, TrendingDown, Archive, HelpCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { formatDate, STATUS_LABELS } from '@/lib/utils';
+import { formatDate, STATUS_LABELS, cn } from '@/lib/utils';
 
 const EMPTY_FILTERS: StockFilters = {
-  search: '', status: '', category: '', rack_number: '',
+  search: '', status: '', category: '', location: '', rack_number: '',
   date_added_from: '', date_added_to: '',
   date_removed_from: '', date_removed_to: '',
   stored_by: '', released_to: '', received_by: '',
@@ -33,10 +34,13 @@ export default function HomePage() {
   const [filters, setFilters] = useState<StockFilters>(EMPTY_FILTERS);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editItem, setEditItem] = useState<StockItem | null>(null);
+  const [templateItem, setTemplateItem] = useState<StockItem | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [quickItem, setQuickItem] = useState<StockItem | null>(null);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const [categories, setCategories] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
   const [racks, setRacks] = useState<string[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -70,12 +74,14 @@ export default function HomePage() {
 
   const fetchDistinct = useCallback(async () => {
     if (!dbReady) return;
-    const [catRes, rackRes] = await Promise.all([
+    const [catRes, locRes, rackRes] = await Promise.all([
       fetch('/api/stock?distinct=category'),
+      fetch('/api/stock?distinct=location'),
       fetch('/api/stock?distinct=rack_number'),
     ]);
-    const [cat, rack] = await Promise.all([catRes.json(), rackRes.json()]);
+    const [cat, loc, rack] = await Promise.all([catRes.json(), locRes.json(), rackRes.json()]);
     setCategories(cat.values ?? []);
+    setLocations(loc.values ?? []);
     setRacks(rack.values ?? []);
   }, [dbReady]);
 
@@ -101,8 +107,11 @@ export default function HomePage() {
     inStock: items.filter((i) => i.status === 'in-stock').length,
     lowStock: items.filter((i) => i.status === 'low-stock').length,
     mismatches: items.filter((i) => i.quantity_mismatch).length,
-    removed: items.filter((i) => i.status === 'removed').length,
   };
+
+  const setStatFilter = (patch: Partial<StockFilters>) =>
+    setFilters((f) => ({ ...EMPTY_FILTERS, ...patch }));
+  const isFiltered = Object.entries(filters).some(([k, v]) => k !== 'search' && v !== '' && v !== false);
 
   const exportAll = () => {
     const data = items.map((r) => ({
@@ -110,6 +119,7 @@ export default function HomePage() {
       'Name': r.name,
       'Description': r.description ?? '',
       'Category': r.category ?? '',
+      'Location': r.location ?? '',
       'Rack Number': r.rack_number ?? '',
       'Quantity': r.quantity,
       'Physical Count': r.physical_quantity ?? '',
@@ -143,6 +153,9 @@ export default function HomePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => setTutorialOpen(true)} title="Help & Tutorial">
+              <HelpCircle size={15} />
+            </Button>
             <Button variant="ghost" size="icon" onClick={refresh} title="Refresh">
               <RefreshCw size={15} />
             </Button>
@@ -152,7 +165,7 @@ export default function HomePage() {
             <Button variant="outline" size="sm" onClick={exportAll}>
               <Archive size={14} /> Export All
             </Button>
-            <Button size="sm" onClick={() => { setEditItem(null); setFormOpen(true); }}>
+            <Button size="sm" onClick={() => { setEditItem(null); setTemplateItem(null); setFormOpen(true); }}>
               <Plus size={14} /> Add Item
             </Button>
           </div>
@@ -161,21 +174,27 @@ export default function HomePage() {
 
       <main className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
         {/* Stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'Total Items', value: stats.total, icon: Package, color: 'text-gray-400' },
-            { label: 'In Stock', value: stats.inStock, icon: Package, color: 'text-emerald-400' },
-            { label: 'Low Stock', value: stats.lowStock, icon: TrendingDown, color: 'text-amber-400' },
-            { label: 'Mismatches', value: stats.mismatches, icon: AlertTriangle, color: 'text-amber-400' },
-            { label: 'Removed', value: stats.removed, icon: Archive, color: 'text-red-400' },
-          ].map(({ label, value, icon: Icon, color }) => (
-            <div key={label} className="bg-white/3 border border-white/8 rounded-xl px-4 py-3">
+            { label: 'All Items', value: stats.total, icon: Package, color: 'text-gray-400', onClick: () => setFilters(EMPTY_FILTERS), active: !isFiltered },
+            { label: 'In Stock', value: stats.inStock, icon: Package, color: 'text-emerald-400', onClick: () => setStatFilter({ status: 'in-stock' }), active: filters.status === 'in-stock' && !filters.mismatch_only },
+            { label: 'Low Stock', value: stats.lowStock, icon: TrendingDown, color: 'text-amber-400', onClick: () => setStatFilter({ status: 'low-stock' }), active: filters.status === 'low-stock' },
+            { label: 'Mismatches', value: stats.mismatches, icon: AlertTriangle, color: 'text-amber-400', onClick: () => setStatFilter({ mismatch_only: true }), active: filters.mismatch_only },
+          ].map(({ label, value, icon: Icon, color, onClick, active }) => (
+            <button
+              key={label}
+              onClick={onClick}
+              className={cn(
+                'text-left bg-white/3 border rounded-xl px-4 py-3 transition-colors hover:bg-white/6 active:bg-white/8',
+                active ? 'border-violet-500/40 bg-violet-500/8' : 'border-white/8'
+              )}
+            >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-gray-500">{label}</span>
                 <Icon size={14} className={color} />
               </div>
               <p className="text-2xl font-bold text-white">{value}</p>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -210,6 +229,7 @@ export default function HomePage() {
           filters={filters}
           onChange={setFilters}
           categories={categories}
+          locations={locations}
           racks={racks}
         />
 
@@ -227,7 +247,8 @@ export default function HomePage() {
           loading={loading}
           selectedIds={selectedIds}
           onSelectChange={setSelectedIds}
-          onEdit={(item) => { setEditItem(item); setFormOpen(true); }}
+          onEdit={(item) => { setEditItem(item); setTemplateItem(null); setFormOpen(true); }}
+          onDuplicate={(item) => { setEditItem(null); setTemplateItem(item); setFormOpen(true); }}
           onQuickAdjust={(item) => setQuickItem(item)}
           onRefresh={refresh}
         />
@@ -239,9 +260,11 @@ export default function HomePage() {
 
       <StockForm
         open={formOpen}
-        onClose={() => setFormOpen(false)}
+        onClose={() => { setFormOpen(false); setTemplateItem(null); }}
         onSaved={refresh}
         item={editItem}
+        template={templateItem}
+        locations={locations}
       />
 
       <QuickAdjust item={quickItem} onClose={() => setQuickItem(null)} onSaved={refresh} />
@@ -251,6 +274,8 @@ export default function HomePage() {
         onClose={() => setImportOpen(false)}
         onImported={refresh}
       />
+
+      <TutorialModal open={tutorialOpen} onClose={() => setTutorialOpen(false)} />
     </div>
   );
 }

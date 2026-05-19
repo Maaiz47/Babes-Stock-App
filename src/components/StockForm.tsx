@@ -16,6 +16,7 @@ interface FormData {
   name: string;
   description: string;
   category: string;
+  location: string;
   rack_number: string;
   quantity: string;
   physical_quantity: string;
@@ -33,11 +34,13 @@ interface Props {
   onClose: () => void;
   onSaved: () => void;
   item?: StockItem | null;
+  template?: StockItem | null;
+  locations?: string[];
 }
 
 const today = new Date().toISOString().split('T')[0];
 
-export function StockForm({ open, onClose, onSaved, item }: Props) {
+export function StockForm({ open, onClose, onSaved, item, template, locations = [] }: Props) {
   const isEdit = !!item;
   const { error: toastError, success } = useToast();
   const [saving, setSaving] = useState(false);
@@ -48,6 +51,7 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
       name: '',
       description: '',
       category: '',
+      location: '',
       rack_number: '',
       quantity: '0',
       physical_quantity: '',
@@ -69,6 +73,7 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
           name: item.name,
           description: item.description ?? '',
           category: item.category ?? '',
+          location: item.location ?? '',
           rack_number: item.rack_number ?? '',
           quantity: String(item.quantity),
           physical_quantity: item.physical_quantity != null ? String(item.physical_quantity) : '',
@@ -80,12 +85,31 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
           stored_by: item.stored_by ?? '',
           notes: item.notes ?? '',
         });
+      } else if (template) {
+        reset({
+          stock_number: generateStockNumber(),
+          name: template.name,
+          description: template.description ?? '',
+          category: template.category ?? '',
+          location: template.location ?? '',
+          rack_number: template.rack_number ?? '',
+          quantity: '0',
+          physical_quantity: '',
+          status: template.status,
+          date_added: today,
+          date_removed: '',
+          released_to: '',
+          received_by: '',
+          stored_by: template.stored_by ?? '',
+          notes: template.notes ?? '',
+        });
       } else {
         reset({
           stock_number: generateStockNumber(),
           name: '',
           description: '',
           category: '',
+          location: '',
           rack_number: '',
           quantity: '0',
           physical_quantity: '',
@@ -99,7 +123,7 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
         });
       }
     }
-  }, [open, item, reset]);
+  }, [open, item, template, reset]);
 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
     setSaving(true);
@@ -110,6 +134,7 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
         physical_quantity: data.physical_quantity != null ? Number(data.physical_quantity) : null,
         description: data.description || undefined,
         category: data.category || undefined,
+        location: data.location || null,
         rack_number: data.rack_number || undefined,
         date_removed: data.date_removed || null,
         released_to: data.released_to || null,
@@ -149,7 +174,7 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
     <Dialog
       open={open}
       onClose={onClose}
-      title={isEdit ? 'Edit Stock Item' : 'Add Stock Item'}
+      title={isEdit ? 'Edit Stock Item' : template ? `Duplicate — ${template.name}` : 'Add Stock Item'}
       size="2xl"
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -182,10 +207,25 @@ export function StockForm({ open, onClose, onSaved, item }: Props) {
           />
         </Field>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Location" hint="Warehouse or office where this item is stored">
+            <input
+              type="text"
+              list="locations-list"
+              {...register('location')}
+              placeholder="e.g. Warehouse A"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-colors"
+            />
+            <datalist id="locations-list">
+              {locations.map(l => <option key={l} value={l} />)}
+            </datalist>
+          </Field>
           <Field label="Category">
             <Input {...register('category')} placeholder="e.g. Electronics" />
           </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <Field label="Rack Number">
             <Input {...register('rack_number')} placeholder="e.g. A-12" />
           </Field>
