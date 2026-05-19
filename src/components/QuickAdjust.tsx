@@ -240,16 +240,32 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
               </label>
               <input
                 type="text"
-                list="move-locations-list"
                 value={newLocation}
                 onChange={(e) => setNewLocation(e.target.value)}
-                placeholder={item.location ? 'Choose or type a location…' : 'e.g. Warehouse A'}
+                placeholder={item.location ? 'Type or tap a suggestion…' : 'e.g. Warehouse A'}
                 style={{ fontSize: '16px' }}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
               />
-              <datalist id="move-locations-list">
-                {(locations ?? []).filter(l => l !== item.location).map(l => <option key={l} value={l} />)}
-              </datalist>
+              {(() => {
+                const suggestions = (locations ?? []).filter(l =>
+                  l !== item.location &&
+                  l.toLowerCase().includes(newLocation.toLowerCase().trim())
+                );
+                return suggestions.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {suggestions.map(loc => (
+                      <button
+                        key={loc}
+                        type="button"
+                        onClick={() => setNewLocation(loc)}
+                        className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 active:bg-indigo-500/30 transition-colors"
+                      >
+                        {loc}
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
             </div>
           )}
 
