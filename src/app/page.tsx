@@ -15,7 +15,7 @@ import { useToast } from '@/components/ui/toast';
 import type { StockItem, StockFilters } from '@/lib/types';
 import {
   Plus, Upload, RefreshCw, Search, AlertTriangle,
-  Package, TrendingDown, Archive, HelpCircle, LogOut, Shield, User, ClipboardList
+  Package, TrendingDown, TrendingUp, Archive, HelpCircle, LogOut, Shield, User, ClipboardList
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatDate, STATUS_LABELS, cn } from '@/lib/utils';
@@ -25,7 +25,7 @@ const EMPTY_FILTERS: StockFilters = {
   date_added_from: '', date_added_to: '',
   date_removed_from: '', date_removed_to: '',
   stored_by: '', released_to: '', received_by: '',
-  mismatch_only: false,
+  mismatch_only: false, mismatch_type: '',
 };
 
 interface SessionUser { userId: string; username: string; email: string; isAdmin: boolean; }
@@ -47,7 +47,7 @@ export default function HomePage() {
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [countSheetOpen, setCountSheetOpen] = useState(false);
   const [totalCount, setTotalCount] = useState<number | null>(null);
-  const [globalStats, setGlobalStats] = useState<{ total: number; in_stock: number; low_stock: number; mismatches: number } | null>(null);
+  const [globalStats, setGlobalStats] = useState<{ total: number; in_stock: number; low_stock: number; mismatches: number; missing: number; excess: number } | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [racks, setRacks] = useState<string[]>([]);
@@ -123,6 +123,8 @@ export default function HomePage() {
     inStock: globalStats?.in_stock ?? items.filter((i) => i.status === 'in-stock').length,
     lowStock: globalStats?.low_stock ?? items.filter((i) => i.status === 'low-stock').length,
     mismatches: globalStats?.mismatches ?? items.filter((i) => i.quantity_mismatch).length,
+    missing: globalStats?.missing ?? items.filter((i) => i.mismatch_type === 'missing').length,
+    excess: globalStats?.excess ?? items.filter((i) => i.mismatch_type === 'excess').length,
   };
 
   const setStatFilter = (patch: Partial<StockFilters>) =>
@@ -216,12 +218,13 @@ export default function HomePage() {
 
       <main className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
         {/* Stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[
             { label: 'All Items', value: totalCount ?? stats.total, icon: Package, color: 'text-gray-400', onClick: () => setFilters(EMPTY_FILTERS), active: !isFiltered },
-            { label: 'In Stock', value: stats.inStock, icon: Package, color: 'text-emerald-400', onClick: () => setStatFilter({ status: 'in-stock' }), active: filters.status === 'in-stock' && !filters.mismatch_only },
-            { label: 'Low Stock', value: stats.lowStock, icon: TrendingDown, color: 'text-amber-400', onClick: () => setStatFilter({ status: 'low-stock' }), active: filters.status === 'low-stock' },
-            { label: 'Mismatches', value: stats.mismatches, icon: AlertTriangle, color: 'text-amber-400', onClick: () => setStatFilter({ mismatch_only: true }), active: filters.mismatch_only },
+            { label: 'In Stock', value: stats.inStock, icon: Package, color: 'text-emerald-400', onClick: () => setStatFilter({ status: 'in-stock' }), active: filters.status === 'in-stock' && !filters.mismatch_only && !filters.mismatch_type },
+            { label: 'Low Stock', value: stats.lowStock, icon: TrendingDown, color: 'text-amber-400', onClick: () => setStatFilter({ status: 'low-stock' }), active: filters.status === 'low-stock' && !filters.mismatch_type },
+            { label: 'Missing', value: stats.missing, icon: AlertTriangle, color: 'text-red-400', onClick: () => setStatFilter({ mismatch_type: 'missing' }), active: filters.mismatch_type === 'missing' },
+            { label: 'Excess', value: stats.excess, icon: TrendingUp, color: 'text-teal-400', onClick: () => setStatFilter({ mismatch_type: 'excess' }), active: filters.mismatch_type === 'excess' },
           ].map(({ label, value, icon: Icon, color, onClick, active }) => (
             <button
               key={label}
@@ -257,12 +260,14 @@ export default function HomePage() {
           )}
           {stats.mismatches > 0 && (
             <Button
-              variant={filters.mismatch_only ? 'warning' : 'outline'}
+              variant={filters.mismatch_only || !!filters.mismatch_type ? 'warning' : 'outline'}
               size="sm"
-              onClick={() => setFilters((f) => ({ ...f, mismatch_only: !f.mismatch_only }))}
+              onClick={() => setFilters((f) => ({ ...f, mismatch_only: !f.mismatch_only, mismatch_type: '' }))}
             >
               <AlertTriangle size={13} />
-              {stats.mismatches} Mismatch{stats.mismatches !== 1 ? 'es' : ''}
+              {stats.missing > 0 && `${stats.missing} missing`}
+              {stats.missing > 0 && stats.excess > 0 && ' · '}
+              {stats.excess > 0 && `${stats.excess} excess`}
             </Button>
           )}
         </div>

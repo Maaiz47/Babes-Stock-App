@@ -11,6 +11,7 @@ export interface StockItem {
   quantity: number;
   physical_quantity?: number | null;
   quantity_mismatch: boolean;
+  mismatch_type: 'excess' | 'missing' | null;
   status: StockStatus;
   date_added: string;
   date_removed?: string | null;
@@ -54,6 +55,7 @@ export interface StockFilters {
   released_to: string;
   received_by: string;
   mismatch_only: boolean;
+  mismatch_type: string;
 }
 
 export interface BulkActionPayload {

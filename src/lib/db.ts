@@ -120,6 +120,7 @@ function mapRow(row: Record<string, unknown>): StockItem {
     quantity: qty,
     physical_quantity: physQty,
     quantity_mismatch: physQty !== null && physQty !== qty,
+    mismatch_type: physQty === null ? null : physQty < qty ? 'missing' : physQty > qty ? 'excess' : null,
     status: String(row.status) as StockItem['status'],
     date_added: String(row.date_added).split('T')[0],
     date_removed: row.date_removed ? String(row.date_removed).split('T')[0] : null,
@@ -199,7 +200,11 @@ export async function getStockItems(filters: Partial<StockFilters> = {}): Promis
     values.push(`%${filters.received_by}%`);
     idx++;
   }
-  if (filters.mismatch_only) {
+  if (filters.mismatch_type === 'missing') {
+    conditions.push(`(physical_quantity IS NOT NULL AND physical_quantity < quantity)`);
+  } else if (filters.mismatch_type === 'excess') {
+    conditions.push(`(physical_quantity IS NOT NULL AND physical_quantity > quantity)`);
+  } else if (filters.mismatch_only) {
     conditions.push(`(physical_quantity IS NOT NULL AND physical_quantity != quantity)`);
   }
 
@@ -215,16 +220,18 @@ export async function getTotalCount(): Promise<number> {
   return result.rows[0].count as number;
 }
 
-export async function getStats(): Promise<{ total: number; in_stock: number; low_stock: number; mismatches: number }> {
+export async function getStats(): Promise<{ total: number; in_stock: number; low_stock: number; mismatches: number; missing: number; excess: number }> {
   const result = await sql`
     SELECT
       COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE status = 'in-stock')::int AS in_stock,
       COUNT(*) FILTER (WHERE status = 'low-stock')::int AS low_stock,
-      COUNT(*) FILTER (WHERE physical_quantity IS NOT NULL AND physical_quantity != quantity)::int AS mismatches
+      COUNT(*) FILTER (WHERE physical_quantity IS NOT NULL AND physical_quantity != quantity)::int AS mismatches,
+      COUNT(*) FILTER (WHERE physical_quantity IS NOT NULL AND physical_quantity < quantity)::int AS missing,
+      COUNT(*) FILTER (WHERE physical_quantity IS NOT NULL AND physical_quantity > quantity)::int AS excess
     FROM stock_items
   `;
-  return result.rows[0] as { total: number; in_stock: number; low_stock: number; mismatches: number };
+  return result.rows[0] as { total: number; in_stock: number; low_stock: number; mismatches: number; missing: number; excess: number };
 }
 
 export async function getStockItem(id: string): Promise<StockItem | null> {

@@ -13,7 +13,7 @@ const EMPTY: StockFilters = {
   date_added_from: '', date_added_to: '',
   date_removed_from: '', date_removed_to: '',
   stored_by: '', released_to: '', received_by: '',
-  mismatch_only: false,
+  mismatch_only: false, mismatch_type: '',
 };
 
 interface Props {
@@ -128,7 +128,7 @@ export function FilterPanel({ filters, onChange, categories, locations, racks }:
           <div className="flex items-center justify-between pt-1">
             <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white transition-colors">
               <div
-                onClick={() => set('mismatch_only', !filters.mismatch_only)}
+                onClick={() => onChange({ ...filters, mismatch_only: !filters.mismatch_only, mismatch_type: '' })}
                 className={cn(
                   'w-8 h-4.5 rounded-full border transition-colors flex items-center px-0.5 cursor-pointer',
                   filters.mismatch_only

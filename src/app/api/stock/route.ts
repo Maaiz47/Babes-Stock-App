@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
       released_to: p.get('released_to') || '',
       received_by: p.get('received_by') || '',
       mismatch_only: p.get('mismatch_only') === 'true',
+      mismatch_type: p.get('mismatch_type') || '',
     };
 
     if (p.get('stats') === 'true') {

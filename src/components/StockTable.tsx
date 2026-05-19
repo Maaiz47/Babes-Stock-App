@@ -7,7 +7,7 @@ import { Badge } from './ui/badge';
 import { Dialog } from './ui/dialog';
 import { useToast } from './ui/toast';
 import {
-  Pencil, Trash2, Copy, AlertTriangle, ChevronUp, ChevronDown,
+  Pencil, Trash2, Copy, AlertTriangle, TrendingUp, ChevronUp, ChevronDown,
   ChevronsUpDown, MapPin, Building2, Package
 } from 'lucide-react';
 
@@ -179,7 +179,8 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                   className={cn(
                     'group cursor-pointer transition-colors active:bg-white/8',
                     selected ? 'bg-violet-500/8' : 'hover:bg-white/3',
-                    item.quantity_mismatch && 'border-l-2 border-l-amber-500'
+                    item.mismatch_type === 'missing' ? 'border-l-2 border-l-red-500' :
+                    item.mismatch_type === 'excess' ? 'border-l-2 border-l-teal-500' : ''
                   )}
                 >
                   <td className="px-3 py-3" onClick={(e) => toggleItem(e, item.id)}>
@@ -196,9 +197,8 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-100">{item.name}</span>
-                      {item.quantity_mismatch && (
-                        <AlertTriangle size={13} className="text-amber-400 shrink-0" />
-                      )}
+                      {item.mismatch_type === 'missing' && <AlertTriangle size={13} className="text-red-400 shrink-0" />}
+                      {item.mismatch_type === 'excess' && <TrendingUp size={13} className="text-teal-400 shrink-0" />}
                     </div>
                     {item.description && (
                       <p className="text-xs text-gray-500 truncate max-w-xs mt-0.5">{item.description}</p>
@@ -223,9 +223,9 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                       {item.physical_quantity !== null && item.physical_quantity !== undefined && (
                         <span className={cn(
                           'text-xs px-1.5 py-0.5 rounded font-mono',
-                          item.quantity_mismatch
-                            ? 'bg-amber-500/15 text-amber-400'
-                            : 'bg-emerald-500/15 text-emerald-400'
+                          item.mismatch_type === 'missing' ? 'bg-red-500/15 text-red-400' :
+                          item.mismatch_type === 'excess' ? 'bg-teal-500/15 text-teal-400' :
+                          'bg-emerald-500/15 text-emerald-400'
                         )}>
                           /{item.physical_quantity}
                         </span>
