@@ -266,6 +266,9 @@ export async function createStockItem(input: StockItemInput, changedBy?: string)
 }
 
 export async function updateStockItem(id: string, input: Partial<StockItemInput>, changedBy?: string): Promise<StockItem> {
+  const current = await getStockItem(id);
+  if (!current) throw new Error('Item not found');
+
   const fields: string[] = [];
   const values: unknown[] = [];
   let idx = 1;
@@ -290,6 +293,15 @@ export async function updateStockItem(id: string, input: Partial<StockItemInput>
   const query = `UPDATE stock_items SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`;
   const result = await sql.query(query, values);
   const item = mapRow(result.rows[0]);
+
+  // If stock_number changed, propagate to all other rows at other locations
+  if ('stock_number' in input && input.stock_number && input.stock_number !== current.stock_number) {
+    await sql`
+      UPDATE stock_items SET stock_number = ${input.stock_number}, updated_at = NOW()
+      WHERE stock_number = ${current.stock_number} AND id != ${id}
+    `;
+  }
+
   await sql`
     INSERT INTO stock_history (stock_item_id, stock_number, change_type, quantity_before, quantity_after, notes, changed_by)
     VALUES (${id}, ${item.stock_number}, 'edit', ${'quantity' in input ? null : item.quantity}, ${item.quantity}, 'Item details edited', ${changedBy ?? null})
