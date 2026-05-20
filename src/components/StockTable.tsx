@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef } from 'react';
 import type { StockItem } from '@/lib/types';
-import { formatDate, STATUS_LABELS, STATUS_COLORS, cn } from '@/lib/utils';
+import { formatDate, formatDateSmart, STATUS_LABELS, STATUS_COLORS, cn } from '@/lib/utils';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog } from './ui/dialog';
@@ -242,8 +242,8 @@ export function StockTable({ items, loading, selectedIds, onSelectChange, onEdit
                   <td className="px-3 py-3">
                     <Badge className={STATUS_COLORS[item.status]}>{STATUS_LABELS[item.status]}</Badge>
                   </td>
-                  <td className="px-3 py-3 text-xs text-gray-400 hidden sm:table-cell">{formatDate(item.date_added)}</td>
-                  <td className="px-3 py-3 text-xs text-gray-400 hidden sm:table-cell">{formatDate(item.date_removed)}</td>
+                  <td className="px-3 py-3 text-xs text-gray-400 hidden sm:table-cell" title={formatDate(item.date_added)}>{formatDateSmart(item.date_added)}</td>
+                  <td className="px-3 py-3 text-xs text-gray-400 hidden sm:table-cell" title={item.date_removed ? formatDate(item.date_removed) : ''}>{formatDateSmart(item.date_removed)}</td>
                   <td className="px-3 py-3"
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}

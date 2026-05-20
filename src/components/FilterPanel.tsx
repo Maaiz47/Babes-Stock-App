@@ -1,12 +1,13 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Input } from './ui/input';
+import { DateInput } from './ui/date-input';
 import { Select } from './ui/select';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import type { StockFilters } from '@/lib/types';
-import { SlidersHorizontal, X, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { SlidersHorizontal, X, AlertTriangle, ChevronDown, ChevronUp, CalendarClock } from 'lucide-react';
+import { cn, getDatePreset } from '@/lib/utils';
 
 const EMPTY: StockFilters = {
   search: '', status: '', category: '', location: '', rack_number: '',
@@ -91,24 +92,77 @@ export function FilterPanel({ filters, onChange, categories, locations, racks }:
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Date Added — From</label>
-              <Input type="date" value={filters.date_added_from} onChange={(e) => set('date_added_from', e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Date Added — To</label>
-              <Input type="date" value={filters.date_added_to} onChange={(e) => set('date_added_to', e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Date Removed — From</label>
-              <Input type="date" value={filters.date_removed_from} onChange={(e) => set('date_removed_from', e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Date Removed — To</label>
-              <Input type="date" value={filters.date_removed_to} onChange={(e) => set('date_removed_to', e.target.value)} />
-            </div>
-          </div>
+          {(() => {
+            const presets: { key: 'today' | 'last7' | 'last30' | 'thisMonth' | 'thisYear'; label: string }[] = [
+              { key: 'today', label: 'Today' },
+              { key: 'last7', label: 'Last 7d' },
+              { key: 'last30', label: 'Last 30d' },
+              { key: 'thisMonth', label: 'This month' },
+              { key: 'thisYear', label: 'This year' },
+            ];
+            const applyPreset = (target: 'added' | 'removed', key: typeof presets[number]['key']) => {
+              const { from, to } = getDatePreset(key);
+              if (target === 'added') onChange({ ...filters, date_added_from: from, date_added_to: to });
+              else onChange({ ...filters, date_removed_from: from, date_removed_to: to });
+            };
+            const isPresetActive = (target: 'added' | 'removed', key: typeof presets[number]['key']) => {
+              const { from, to } = getDatePreset(key);
+              if (target === 'added') return filters.date_added_from === from && filters.date_added_to === to;
+              return filters.date_removed_from === from && filters.date_removed_to === to;
+            };
+            return (
+              <div className="space-y-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs text-gray-500 flex items-center gap-1.5"><CalendarClock size={11} /> Date Added</label>
+                    {(filters.date_added_from || filters.date_added_to) && (
+                      <button type="button" onClick={() => onChange({ ...filters, date_added_from: '', date_added_to: '' })} className="text-[11px] text-gray-500 hover:text-gray-300 transition-colors">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {presets.map(p => (
+                      <button key={p.key} type="button" onClick={() => applyPreset('added', p.key)}
+                        className={cn(
+                          'text-[11px] px-2 py-0.5 rounded-md border transition-colors',
+                          isPresetActive('added', p.key)
+                            ? 'bg-violet-500/20 border-violet-500/40 text-violet-200'
+                            : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-white'
+                        )}
+                      >{p.label}</button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <DateInput value={filters.date_added_from} onChange={(v) => set('date_added_from', v)} clearable placeholder="From" />
+                    <DateInput value={filters.date_added_to} onChange={(v) => set('date_added_to', v)} clearable placeholder="To" />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs text-gray-500 flex items-center gap-1.5"><CalendarClock size={11} /> Date Removed</label>
+                    {(filters.date_removed_from || filters.date_removed_to) && (
+                      <button type="button" onClick={() => onChange({ ...filters, date_removed_from: '', date_removed_to: '' })} className="text-[11px] text-gray-500 hover:text-gray-300 transition-colors">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {presets.map(p => (
+                      <button key={p.key} type="button" onClick={() => applyPreset('removed', p.key)}
+                        className={cn(
+                          'text-[11px] px-2 py-0.5 rounded-md border transition-colors',
+                          isPresetActive('removed', p.key)
+                            ? 'bg-violet-500/20 border-violet-500/40 text-violet-200'
+                            : 'bg-white/5 border-white/8 text-gray-400 hover:bg-white/10 hover:text-white'
+                        )}
+                      >{p.label}</button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <DateInput value={filters.date_removed_from} onChange={(v) => set('date_removed_from', v)} clearable placeholder="From" />
+                    <DateInput value={filters.date_removed_to} onChange={(v) => set('date_removed_to', v)} clearable placeholder="To" />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>

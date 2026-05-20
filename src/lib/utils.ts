@@ -12,6 +12,41 @@ export function formatDate(dateStr: string | null | undefined): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+export function formatDateSmart(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr + 'T00:00:00');
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((now.getTime() - d.getTime()) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays === -1) return 'Tomorrow';
+  if (diffDays > 1 && diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < -1 && diffDays > -7) return `In ${-diffDays} days`;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+export function toISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function getDatePreset(preset: 'today' | 'yesterday' | 'last7' | 'last30' | 'thisMonth' | 'thisYear'): { from: string; to: string } {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const toStr = toISODate(today);
+  switch (preset) {
+    case 'today':     return { from: toStr, to: toStr };
+    case 'yesterday': { const y = new Date(today); y.setDate(today.getDate() - 1); const ys = toISODate(y); return { from: ys, to: ys }; }
+    case 'last7':     { const f = new Date(today); f.setDate(today.getDate() - 6);  return { from: toISODate(f), to: toStr }; }
+    case 'last30':    { const f = new Date(today); f.setDate(today.getDate() - 29); return { from: toISODate(f), to: toStr }; }
+    case 'thisMonth': { const f = new Date(today.getFullYear(), today.getMonth(), 1); return { from: toISODate(f), to: toStr }; }
+    case 'thisYear':  { const f = new Date(today.getFullYear(), 0, 1); return { from: toISODate(f), to: toStr }; }
+  }
+}
+
 export const STATUS_LABELS: Record<StockStatus, string> = {
   'in-stock': 'In Stock',
   'low-stock': 'Low Stock',

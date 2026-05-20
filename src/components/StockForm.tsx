@@ -4,9 +4,10 @@ import { useForm, type SubmitHandler } from 'react-hook-form';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { DateInput } from './ui/date-input';
 import { Select } from './ui/select';
 import { useToast } from './ui/toast';
-import { generateStockNumber } from '@/lib/utils';
+import { generateStockNumber, toISODate, formatDateSmart } from '@/lib/utils';
 import type { StockItem, StockItemInput, StockStatus } from '@/lib/types';
 import { Wand2, Info } from 'lucide-react';
 import { HistoryPanel } from './HistoryPanel';
@@ -43,7 +44,7 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
   const { error: toastError, success } = useToast();
   const [saving, setSaving] = useState(false);
 
-  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<FormData>({
     defaultValues: {
       stock_number: '',
       name: '',
@@ -243,8 +244,26 @@ export function StockForm({ open, onClose, onSaved, item, template, locations = 
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Date Added *" error={errors.date_added?.message}>
-            <Input type="date" {...register('date_added')} />
+          <Field label="Date Added *" error={errors.date_added?.message} hint={watch('date_added') ? formatDateSmart(watch('date_added')) : undefined}>
+            <DateInput value={watch('date_added') || ''} onChange={(v) => setValue('date_added', v, { shouldDirty: true })} />
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {([
+                { label: 'Today', offset: 0 },
+                { label: 'Yesterday', offset: -1 },
+                { label: '−7d', offset: -7 },
+                { label: '−30d', offset: -30 },
+              ] as { label: string; offset: number }[]).map(p => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => {
+                    const d = new Date(); d.setDate(d.getDate() + p.offset);
+                    setValue('date_added', toISODate(d), { shouldDirty: true });
+                  }}
+                  className="text-[11px] px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors border border-white/8"
+                >{p.label}</button>
+              ))}
+            </div>
           </Field>
           <Field label="Stored By" hint="Who placed this item into storage">
             <Input {...register('stored_by')} placeholder="Name" />
