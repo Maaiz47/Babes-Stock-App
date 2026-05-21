@@ -7,6 +7,7 @@ import { FilterPanel } from '@/components/FilterPanel';
 import { BulkActions } from '@/components/BulkActions';
 import { ImportModal } from '@/components/ImportModal';
 import { QuickAdjust } from '@/components/QuickAdjust';
+import { Celebration } from '@/components/ui/celebration';
 import { TutorialModal } from '@/components/TutorialModal';
 import { CountSheetModal } from '@/components/CountSheetModal';
 import { Button } from '@/components/ui/button';
@@ -52,6 +53,7 @@ export default function HomePage() {
   const [locations, setLocations] = useState<string[]>([]);
   const [racks, setRacks] = useState<string[]>([]);
   const [splashPhase, setSplashPhase] = useState<'show' | 'fade' | 'done'>('show');
+  const [celebrating, setCelebrating] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const initDB = useCallback(async () => {
@@ -381,7 +383,8 @@ export default function HomePage() {
         locations={locations}
       />
 
-      <QuickAdjust item={quickItem} onClose={() => setQuickItem(null)} onSaved={refresh} locations={locations} />
+      <QuickAdjust item={quickItem} onClose={() => setQuickItem(null)} onSaved={refresh} onMismatchResolved={() => setCelebrating(true)} locations={locations} />
+      {celebrating && <Celebration onDone={() => setCelebrating(false)} />}
 
       <ImportModal
         open={importOpen}

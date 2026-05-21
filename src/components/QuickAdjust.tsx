@@ -13,6 +13,7 @@ interface Props {
   item: StockItem | null;
   onClose: () => void;
   onSaved: () => void;
+  onMismatchResolved?: () => void;
   locations?: string[];
 }
 
@@ -29,7 +30,7 @@ function defaultAmount(type: AdjustType, item: StockItem): string {
   return '1';
 }
 
-export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
+export function QuickAdjust({ item, onClose, onSaved, onMismatchResolved, locations }: Props) {
   const { success, error: toastError } = useToast();
   const [type, setType] = useState<AdjustType>('subtract');
   const [amount, setAmount] = useState('1');
@@ -87,6 +88,12 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
   const physicalMismatch = newPhysical != null && newPhysical !== newSystemQty;
   const wouldGoNegative = type === 'subtract' && newSystemQty < 0;
 
+  // Detect whether this operation would resolve a quantity mismatch
+  const willResolveMismatch =
+    item.quantity_mismatch &&
+    ((type === 'count' && num === item.quantity) ||
+     (type === 'set_system' && item.physical_quantity !== null && num === item.physical_quantity));
+
   const submit = async () => {
     setSaving(true);
     try {
@@ -118,6 +125,7 @@ export function QuickAdjust({ item, onClose, onSaved, locations }: Props) {
       success('Updated', `${item.name}`);
       onSaved();
       onClose();
+      if (willResolveMismatch) onMismatchResolved?.();
     } catch (e) {
       toastError('Failed', String(e));
     } finally {
