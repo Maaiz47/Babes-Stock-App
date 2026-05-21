@@ -24,6 +24,8 @@ const TYPE_META: Record<string, { label: string; icon: React.ReactNode; color: s
   create: { label: 'Created', icon: <Package size={12} />, color: 'text-gray-400 bg-white/5' },
   edit: { label: 'Edited', icon: <Hash size={12} />, color: 'text-gray-400 bg-white/5' },
   move: { label: 'Moved', icon: <ArrowRightLeft size={12} />, color: 'text-indigo-400 bg-indigo-500/10' },
+  transfer_out: { label: 'Transferred out', icon: <ArrowDown size={12} />, color: 'text-orange-400 bg-orange-500/10' },
+  transfer_in:  { label: 'Transferred in',  icon: <ArrowUp size={12} />,  color: 'text-teal-400 bg-teal-500/10' },
 };
 
 export function HistoryPanel({ itemId }: { itemId: string }) {

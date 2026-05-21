@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { HistoryPanel } from './HistoryPanel';
 import { useToast } from './ui/toast';
 import type { StockItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -434,6 +435,8 @@ export function QuickAdjust({ item, onClose, onSaved, onMismatchResolved, locati
               style={{ fontSize: '16px' }}
             />
           </div>
+
+          <HistoryPanel itemId={item.id} />
 
           {wouldGoNegative && !confirmNegative && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/8 px-4 py-3 space-y-3">
