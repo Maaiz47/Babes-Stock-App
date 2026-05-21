@@ -6,6 +6,7 @@ import { StockForm } from '@/components/StockForm';
 import { FilterPanel } from '@/components/FilterPanel';
 import { BulkActions } from '@/components/BulkActions';
 import { ImportModal } from '@/components/ImportModal';
+import { ExportModal } from '@/components/ExportModal';
 import { QuickAdjust } from '@/components/QuickAdjust';
 import { Celebration } from '@/components/ui/celebration';
 import { TutorialModal } from '@/components/TutorialModal';
@@ -16,10 +17,9 @@ import { useToast } from '@/components/ui/toast';
 import type { StockItem, StockFilters } from '@/lib/types';
 import {
   Plus, Upload, RefreshCw, Search, AlertTriangle,
-  Package, TrendingDown, TrendingUp, Archive, HelpCircle, LogOut, Shield, User, ClipboardList
+  Package, TrendingDown, TrendingUp, Download, HelpCircle, LogOut, Shield, User, ClipboardList
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
-import { formatDate, STATUS_LABELS, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 const EMPTY_FILTERS: StockFilters = {
   search: '', status: '', category: '', location: '', rack_number: '',
@@ -44,6 +44,7 @@ export default function HomePage() {
   const [templateItem, setTemplateItem] = useState<StockItem | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [quickItem, setQuickItem] = useState<StockItem | null>(null);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [countSheetOpen, setCountSheetOpen] = useState(false);
@@ -146,31 +147,6 @@ export default function HomePage() {
   const setStatFilter = (patch: Partial<StockFilters>) =>
     setFilters((f) => ({ ...EMPTY_FILTERS, ...patch }));
   const isFiltered = Object.entries(filters).some(([k, v]) => k !== 'search' && v !== '' && v !== false);
-
-  const exportAll = () => {
-    const data = items.map((r) => ({
-      'Stock Number': r.stock_number,
-      'Name': r.name,
-      'Description': r.description ?? '',
-      'Category': r.category ?? '',
-      'Location': r.location ?? '',
-      'Rack Number': r.rack_number ?? '',
-      'Quantity': r.quantity,
-      'Physical Count': r.physical_quantity ?? '',
-      'Mismatch': r.quantity_mismatch ? 'YES' : 'NO',
-      'Status': STATUS_LABELS[r.status],
-      'Date Added': formatDate(r.date_added),
-      'Date Removed': formatDate(r.date_removed),
-      'Stored By': r.stored_by ?? '',
-      'Released To': r.released_to ?? '',
-      'Received By': r.received_by ?? '',
-      'Notes': r.notes ?? '',
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Stock');
-    XLSX.writeFile(wb, `stock-full-export-${Date.now()}.xlsx`);
-  };
 
   return (
     <div className="min-h-screen bg-[#080810]">
@@ -281,8 +257,11 @@ export default function HomePage() {
             <Button variant="outline" size="sm" onClick={() => setCountSheetOpen(true)} className="hidden sm:flex">
               <ClipboardList size={14} /> Count Sheet
             </Button>
-            <Button variant="outline" size="sm" onClick={exportAll} className="hidden sm:flex">
-              <Archive size={14} /> Export All
+            <Button variant="outline" size="icon" onClick={() => setExportOpen(true)} className="sm:hidden" title="Export">
+              <Download size={14} />
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setExportOpen(true)} className="hidden sm:flex">
+              <Download size={14} /> Export
             </Button>
             <Button size="sm" onClick={() => { setEditItem(null); setTemplateItem(null); setFormOpen(true); }}>
               <Plus size={14} />
@@ -327,17 +306,21 @@ export default function HomePage() {
         })()}
 
         {/* Search + Filters */}
-        <div className="flex gap-3">
-          <Input
-            icon={<Search size={14} />}
-            placeholder="Search by name, stock number, description…"
-            value={filters.search}
-            onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-          />
+        <div className="flex flex-col gap-2">
+          <div className="w-full">
+            <Input
+              icon={<Search size={14} />}
+              placeholder="Search by name, stock number, description…"
+              value={filters.search}
+              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+            />
+          </div>
           {items.length > 0 && selectedIds.length === 0 && (filters.search || Object.values(filters).some(v => v !== '' && v !== false)) && (
-            <Button variant="outline" size="sm" onClick={() => setSelectedIds(items.map(i => i.id))}>
-              Select all {items.length}
-            </Button>
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setSelectedIds(items.map(i => i.id))}>
+                Select all {items.length}
+              </Button>
+            </div>
           )}
         </div>
 
@@ -390,6 +373,14 @@ export default function HomePage() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onImported={refresh}
+      />
+
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        items={items}
+        selectedIds={selectedIds}
+        isFiltered={isFiltered}
       />
 
       <TutorialModal open={tutorialOpen} onClose={() => setTutorialOpen(false)} />
