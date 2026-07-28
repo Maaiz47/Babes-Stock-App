@@ -46,7 +46,9 @@ export function Dialog({ open, onClose, title, description, children, className,
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      {/* Solid scrim on purpose: backdrop-filter on a fixed full-screen layer crashes iOS WebKit.
+          The extra opacity compensates for the blur that used to sit here. */}
+      <div className="absolute inset-0 bg-black/80" />
       <div
         className={cn(
           'relative w-full bg-gray-900 border border-white/10 shadow-2xl shadow-black/50',
@@ -64,6 +66,7 @@ export function Dialog({ open, onClose, title, description, children, className,
               {description && <p className="mt-1 text-sm text-gray-400">{description}</p>}
             </div>
             <button
+              type="button"
               onClick={onClose}
               className="ml-4 p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-white/8 transition-colors"
             >

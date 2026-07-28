@@ -9,7 +9,14 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
-  const isApi = pathname.startsWith('/api/auth') || pathname.startsWith('/api/init');
+  // Routes that authenticate themselves and must never be cookie-gated here.
+  // /api/meds/dispatch is called by cron with a Bearer token and no cookie: a
+  // redirect to /login would return 200 HTML, so the caller would report success
+  // while no reminder was ever sent. The route does its own constant-time
+  // CRON_SECRET check, so bypassing the cookie gate does not open it up.
+  const isApi = pathname.startsWith('/api/auth')
+    || pathname.startsWith('/api/init')
+    || pathname.startsWith('/api/meds/dispatch');
 
   if (isPublic || isApi) {
     // Already logged in → redirect away from auth pages
@@ -44,6 +51,18 @@ export async function proxy(request: NextRequest) {
   }
 }
 
+/**
+ * `/sw.js` and `/manifest.webmanifest` are excluded on purpose.
+ *
+ * Per the service-worker spec a redirect on the script fetch is a hard
+ * registration failure — it cannot be followed. With them inside the matcher,
+ * the moment the 7-day session JWT expired the browser's periodic update check
+ * would get a 307 to /login, the registration would be torn down, and the
+ * medicine alarms would stop firing with no visible error. Neither file
+ * contains anything private.
+ */
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.png$).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|sw\\.js$|manifest\\.webmanifest$|.*\\.png$).*)',
+  ],
 };

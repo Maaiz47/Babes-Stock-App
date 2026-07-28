@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/toast';
 import type { StockItem, StockFilters } from '@/lib/types';
 import {
   Plus, Upload, RefreshCw, Search, AlertTriangle,
-  Package, TrendingDown, TrendingUp, Archive, HelpCircle, LogOut, Shield, User, ClipboardList
+  Package, TrendingDown, TrendingUp, Archive, HelpCircle, LogOut, Shield, User, ClipboardList, Pill
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatDate, STATUS_LABELS, cn } from '@/lib/utils';
@@ -263,6 +263,9 @@ export default function HomePage() {
                 <Shield size={15} className="text-violet-400" />
               </Button>
             )}
+            <Button variant="ghost" size="icon" onClick={() => router.push('/meds')} title="Medicine Reminders">
+              <Pill size={15} className="text-rose-400" />
+            </Button>
             <Button variant="ghost" size="icon" onClick={() => setTutorialOpen(true)} title="Help & Tutorial">
               <HelpCircle size={15} />
             </Button>
