@@ -15,13 +15,19 @@ export const dynamic = 'force-dynamic';
 /** Same whitelist as the create route — unknown keys never reach SQL. */
 const ALLOWED_KEYS = new Set([
   'name', 'strength', 'form', 'dose_label', 'frequency_code', 'times_of_day',
-  'start_date', 'duration_days', 'food_instruction', 'notes', 'color', 'active', 'sort_order',
+  'start_date', 'duration_days', 'min_gap_minutes', 'food_instruction', 'notes', 'color',
+  'active', 'sort_order',
 ]);
 
 const FREQUENCIES: FrequencyCode[] = ['OD', 'BD', 'TDS', 'QDS', 'CUSTOM'];
 const FOODS: FoodInstruction[] = ['before_food', 'with_food', 'after_food', 'any'];
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// A whole day is the practical ceiling: past that a "minimum gap" would defer a
+// dose beyond the next one and start losing doses instead of spacing them.
+const MAX_MIN_GAP_MINUTES = 24 * 60;
+
 
 /**
  * `id` comes straight off the URL. Postgres raises 22P02 on anything that is
@@ -104,6 +110,23 @@ function parsePatch(raw: unknown): Parsed {
         return { ok: false, error: 'duration_days must be null or a positive integer' };
       }
       patch.duration_days = n;
+    }
+  }
+
+  // null is meaningful here, not "unset": it restores the derived-from-times
+  // default, so it must be distinguishable from omitting the key entirely.
+  if ('min_gap_minutes' in body) {
+    if (body.min_gap_minutes === null) {
+      patch.min_gap_minutes = null;
+    } else {
+      const n = Number(body.min_gap_minutes);
+      if (!Number.isInteger(n) || n <= 0 || n > MAX_MIN_GAP_MINUTES) {
+        return {
+          ok: false,
+          error: `min_gap_minutes must be null or a positive integer up to ${MAX_MIN_GAP_MINUTES}`,
+        };
+      }
+      patch.min_gap_minutes = n;
     }
   }
 

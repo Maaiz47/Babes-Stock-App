@@ -18,6 +18,7 @@ import {
   type FrequencyCode,
   type Medication,
   type MedicationInput,
+  defaultMinGapMinutes,
 } from '@/lib/meds';
 import { MED_COLORS, MED_COLOR_TOKENS, formatMedDateLong } from './MedChecklist';
 
@@ -59,6 +60,7 @@ interface FormState {
   times_of_day: string[];
   start_date: string;
   duration_days: string;
+  min_gap_minutes: string;
   food_instruction: FoodInstruction;
   notes: string;
   color: string;
@@ -76,6 +78,8 @@ function initialState(medication: Medication | null, defaultStartDate: string): 
       times_of_day: [...medication.times_of_day].sort(),
       start_date: medication.start_date,
       duration_days: medication.duration_days == null ? '' : String(medication.duration_days),
+      min_gap_minutes:
+        medication.min_gap_minutes == null ? '' : String(medication.min_gap_minutes),
       food_instruction: medication.food_instruction,
       notes: medication.notes ?? '',
       color: medication.color,
@@ -91,6 +95,7 @@ function initialState(medication: Medication | null, defaultStartDate: string): 
     times_of_day: [...FREQUENCY_DEFAULT_TIMES.OD],
     start_date: defaultStartDate,
     duration_days: '',
+    min_gap_minutes: '',
     food_instruction: 'any',
     notes: '',
     color: 'violet',
@@ -114,6 +119,16 @@ export function MedicineEditor({
 
   const patch = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  /**
+   * What the gap would be if she leaves the field blank. Recomputed from the
+   * times she is editing right now, so the placeholder tracks her edits rather
+   * than describing the medicine as it was saved.
+   */
+  const derivedGap = useMemo(
+    () => defaultMinGapMinutes(form.times_of_day.filter((t) => t)),
+    [form.times_of_day]
+  );
 
   const endsLabel = useMemo(() => {
     const days = Number(form.duration_days);
@@ -223,6 +238,17 @@ export function MedicineEditor({
       duration = Math.floor(parsed);
     }
 
+    // Blank means "derive it from this medicine's own times", which is the right
+    // answer for almost every medicine — so blank must stay easy to express.
+    let minGap: number | null = null;
+    if (form.min_gap_minutes.trim()) {
+      const parsed = Number(form.min_gap_minutes);
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 24 * 60) {
+        return setError('Minimum gap must be between 1 minute and 24 hours, or blank.');
+      }
+      minGap = Math.floor(parsed);
+    }
+
     const payload: MedicationInput = {
       name,
       strength: form.strength.trim() || null,
@@ -232,6 +258,7 @@ export function MedicineEditor({
       times_of_day: times,
       start_date: form.start_date,
       duration_days: duration,
+      min_gap_minutes: minGap,
       food_instruction: form.food_instruction,
       notes: form.notes.trim() || null,
       color: form.color,
@@ -393,6 +420,34 @@ export function MedicineEditor({
             </>
           ) : (
             'Leave the duration blank for an ongoing medicine.'
+          )}
+        </p>
+
+        <Field label="Minimum gap between doses (minutes)">
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={24 * 60}
+            value={form.min_gap_minutes}
+            onChange={(e) => patch('min_gap_minutes', e.target.value)}
+            placeholder={String(derivedGap)}
+            style={{ fontSize: '16px' }}
+          />
+        </Field>
+        <p className="-mt-3 text-[11px] text-gray-500">
+          If a dose is taken late, the next reminder is pushed back so the two stay at least
+          this far apart.{' '}
+          {form.min_gap_minutes.trim() ? (
+            <>Using your own value.</>
+          ) : (
+            <>
+              Leave blank to use{' '}
+              <span className="font-medium text-gray-300">
+                {Math.floor(derivedGap / 60)}h {derivedGap % 60 ? `${derivedGap % 60}m` : ''}
+              </span>
+              , worked out from the times above.
+            </>
           )}
         </p>
 

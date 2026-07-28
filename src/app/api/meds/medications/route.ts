@@ -21,13 +21,19 @@ export const dynamic = 'force-dynamic';
  */
 const ALLOWED_KEYS = new Set([
   'name', 'strength', 'form', 'dose_label', 'frequency_code', 'times_of_day',
-  'start_date', 'duration_days', 'food_instruction', 'notes', 'color', 'active', 'sort_order',
+  'start_date', 'duration_days', 'min_gap_minutes', 'food_instruction', 'notes', 'color',
+  'active', 'sort_order',
 ]);
 
 const FREQUENCIES: FrequencyCode[] = ['OD', 'BD', 'TDS', 'QDS', 'CUSTOM'];
 const FOODS: FoodInstruction[] = ['before_food', 'with_food', 'after_food', 'any'];
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// A whole day is the practical ceiling: past that a "minimum gap" would defer a
+// dose beyond the next one and start losing doses instead of spacing them.
+const MAX_MIN_GAP_MINUTES = 24 * 60;
+
 
 type Parsed = { ok: true; value: MedicationInput } | { ok: false; error: string };
 
@@ -95,6 +101,19 @@ function parseCreate(raw: unknown, today: string, nextSortOrder: number): Parsed
     duration_days = n;
   }
 
+  // null means "derive it from this medicine's own times" — the normal case.
+  let min_gap_minutes: number | null = null;
+  if (body.min_gap_minutes !== undefined && body.min_gap_minutes !== null) {
+    const n = Number(body.min_gap_minutes);
+    if (!Number.isInteger(n) || n <= 0 || n > MAX_MIN_GAP_MINUTES) {
+      return {
+        ok: false,
+        error: `min_gap_minutes must be null or a positive integer up to ${MAX_MIN_GAP_MINUTES}`,
+      };
+    }
+    min_gap_minutes = n;
+  }
+
   for (const key of ['form', 'dose_label', 'color'] as const) {
     if (body[key] !== undefined && typeof body[key] !== 'string') {
       return { ok: false, error: `${key} must be a string` };
@@ -118,6 +137,7 @@ function parseCreate(raw: unknown, today: string, nextSortOrder: number): Parsed
       times_of_day,
       start_date,
       duration_days,
+      min_gap_minutes,
       food_instruction,
       notes: optionalText(body.notes),
       color: optionalText(body.color) ?? 'violet',

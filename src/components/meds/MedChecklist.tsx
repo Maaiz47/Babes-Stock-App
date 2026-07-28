@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { Check, Clock, MoreHorizontal, Moon, Sun, Sunset, Utensils } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { TakenTimeSheet } from './TakenTimeSheet';
 import {
   FOOD_LABELS,
   courseEndDate,
+  effectiveMinGapMinutes,
   type DoseStatus,
   type FoodInstruction,
   type Medication,
@@ -213,6 +215,14 @@ export function slotOf(time: string): SlotKey {
  */
 export interface DoseActionOptions {
   force?: boolean;
+  /**
+   * When she says she actually swallowed it, as an ISO instant.
+   *
+   * Not cosmetic. The next dose's minimum gap is measured from this, so ticking
+   * off a dose at 10:30 that she really took at 08:15 would otherwise push the
+   * following dose two hours further out than it should be.
+   */
+  takenAt?: string;
 }
 
 export type DoseActionHandler = (
@@ -245,6 +255,25 @@ export function MedChecklist({
 }: MedChecklistProps) {
   // The open menu closes on outside click and after every action, so it needs no effect.
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  /**
+   * The dose awaiting a "when did you take it?" answer.
+   *
+   * Ticking a dose off opens this rather than writing immediately: the time she
+   * confirms is what the NEXT dose is spaced from, so assuming "now" would
+   * quietly mis-time the following reminder every time she ticks one off late.
+   * Un-ticking never opens it — undoing a mis-tap has to stay a single tap.
+   */
+  const [confirming, setConfirming] = useState<ScheduledDose | null>(null);
+
+  const medsById = new Map(medications.map((m) => [m.id, m]));
+
+  /** Next scheduled dose of the same medicine, for the sheet's shift preview. */
+  const nextDoseAfter = (dose: ScheduledDose): string | null => {
+    const later = doses
+      .filter((d) => d.medication_id === dose.medication_id && d.scheduled_at > dose.scheduled_at)
+      .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+    return later.length > 0 ? later[0].scheduled_at : null;
+  };
 
   const endDates = new Map<string, string | null>();
   for (const med of medications) endDates.set(med.id, safeCourseEndDate(med));
@@ -314,6 +343,7 @@ export function MedChecklist({
                           }
                           onCloseMenu={() => setOpenMenu(null)}
                           onAction={onAction}
+                          onRequestConfirm={setConfirming}
                         />
                       ))}
                   </div>
@@ -323,6 +353,27 @@ export function MedChecklist({
           </section>
         );
       })}
+
+      {confirming && (
+        <TakenTimeSheet
+          dose={confirming}
+          tzOffsetMinutes={tzOffsetMinutes}
+          nextDoseAt={nextDoseAfter(confirming)}
+          minGapMinutes={(() => {
+            const med = medsById.get(confirming.medication_id);
+            // Falls back to the tightest planned interval when the medicine is
+            // somehow absent, rather than 0 — a 0 gap would silently disable the
+            // spacing the sheet is there to explain.
+            return med ? effectiveMinGapMinutes(med) : 0;
+          })()}
+          saving={busyKey === confirming.key}
+          onCancel={() => setConfirming(null)}
+          onConfirm={(takenAtISO) => {
+            onAction(confirming, 'taken', undefined, { force: true, takenAt: takenAtISO });
+            setConfirming(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -340,6 +391,8 @@ interface DoseRowProps {
   onToggleMenu: () => void;
   onCloseMenu: () => void;
   onAction: DoseActionHandler;
+  /** Ticking a dose ON asks her to confirm the time first. */
+  onRequestConfirm: (dose: ScheduledDose) => void;
 }
 
 function DoseRow({
@@ -353,12 +406,20 @@ function DoseRow({
   onToggleMenu,
   onCloseMenu,
   onAction,
+  onRequestConfirm,
 }: DoseRowProps) {
   const color = medColor(dose.color);
   const scheduledMs = Date.parse(dose.scheduled_at);
-  const overdueMinutes = Number.isNaN(scheduledMs)
-    ? 0
-    : Math.floor((now - scheduledMs) / 60_000);
+  /**
+   * Lateness is measured from the EFFECTIVE time, not the printed one. A dose
+   * deliberately pushed back because the previous one was taken late is not
+   * overdue until the new time passes — calling it "2 h overdue" the moment it
+   * shifts would be both wrong and alarming.
+   */
+  const effectiveMs = dose.effective_at ? Date.parse(dose.effective_at) : scheduledMs;
+  const dueMs = Number.isNaN(effectiveMs) ? scheduledMs : effectiveMs;
+  const overdueMinutes = Number.isNaN(dueMs) ? 0 : Math.floor((now - dueMs) / 60_000);
+  const deferredBy = dose.deferred_by_minutes ?? 0;
 
   const taken = dose.status === 'taken';
   const skipped = dose.status === 'skipped';
@@ -422,6 +483,22 @@ function DoseRow({
             )}
           </div>
 
+          {/* A reminder that has quietly moved needs to say so, and say why.
+              An unexplained shift is exactly the kind of thing that reads as
+              the app being broken. */}
+          {pending && deferredBy > 0 && (
+            <p className="mt-1.5 text-[11px] font-medium text-indigo-300">
+              Moved to {formatInstantHHMM(dose.effective_at, tzOffsetMinutes)}
+              {dose.defer_after_taken_at && (
+                <span className="font-normal text-gray-500">
+                  {' '}
+                  · spacing it from your{' '}
+                  {formatInstantHHMM(dose.defer_after_taken_at, tzOffsetMinutes)} dose
+                </span>
+              )}
+            </p>
+          )}
+
           <p
             className={cn(
               'mt-1.5 text-[11px] font-medium',
@@ -477,7 +554,11 @@ function DoseRow({
           <button
             type="button"
             disabled={busy}
-            onClick={() => onAction(dose, taken ? 'pending' : 'taken', undefined, { force: true })}
+            onClick={() =>
+              taken
+                ? onAction(dose, 'pending', undefined, { force: true })
+                : onRequestConfirm(dose)
+            }
             aria-label={taken ? `Mark ${dose.name} as not taken` : `Mark ${dose.name} as taken`}
             aria-pressed={taken}
             className={cn(

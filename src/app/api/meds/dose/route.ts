@@ -112,6 +112,37 @@ export async function POST(req: NextRequest) {
       force = body.force;
     }
 
+    // When she actually swallowed it, which is not always now — she confirms
+    // the time when ticking a dose off. This is not cosmetic: the next dose's
+    // minimum gap is measured from it, so defaulting to now would overstate the
+    // spacing every time she ticks off a dose she took a while ago.
+    let takenAtISO: string | undefined;
+    if (body.taken_at !== undefined && body.taken_at !== null) {
+      if (typeof body.taken_at !== 'string' || Number.isNaN(new Date(body.taken_at).getTime())) {
+        return NextResponse.json({ error: 'taken_at must be a valid date' }, { status: 400 });
+      }
+      const takenMs = new Date(body.taken_at).getTime();
+
+      // A couple of minutes of slack absorbs clock skew between her phone and
+      // the server; beyond that a future time is a bug or a bad edit, and
+      // accepting it would push the NEXT dose out by however far it is wrong.
+      if (takenMs > Date.now() + 2 * 60_000) {
+        return NextResponse.json(
+          { error: 'taken_at cannot be in the future' },
+          { status: 400 }
+        );
+      }
+      // Nor may it predate the dose by more than a day. Guards against a
+      // mis-set date silently deferring — or failing to defer — later doses.
+      if (takenMs < new Date(scheduledAt).getTime() - 24 * 60 * 60_000) {
+        return NextResponse.json(
+          { error: 'taken_at is too far before the dose was due' },
+          { status: 400 }
+        );
+      }
+      takenAtISO = new Date(takenMs).toISOString();
+    }
+
     // Confirm the medicine is hers before writing — this also turns a bogus id
     // into a clean 404 instead of a foreign-key 500, and keeps the non-UUID id
     // out of the status read below.
@@ -155,7 +186,8 @@ export async function POST(req: NextRequest) {
       scheduledAt,
       status,
       snoozeMinutes,
-      !force
+      !force,
+      takenAtISO
     );
     if (!result.applied) {
       return settledConflict(result.status);

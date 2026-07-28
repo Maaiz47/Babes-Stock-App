@@ -132,8 +132,21 @@ const serverAudioUnlocked = () => false;
 
 // ---------------------------------------------------------------- time helpers
 
+/**
+ * When this dose should actually be reminded about.
+ *
+ * `effective_at`, not `scheduled_at`: when the previous dose of the same
+ * medicine was swallowed late, the server pushes this one back so the two are
+ * not taken too close together. Ringing on `scheduled_at` here would have the
+ * in-app alarm firing at the original time while the push channel stayed quiet
+ * until the deferred one — the two halves disagreeing about when a dose is due.
+ *
+ * Falls back to `scheduled_at` so a response from a deploy that predates the
+ * field still rings rather than silently never coming due.
+ */
 function doseTime(dose: ScheduledDose): number {
-  return new Date(dose.scheduled_at).getTime();
+  const effective = dose.effective_at ? Date.parse(dose.effective_at) : NaN;
+  return Number.isNaN(effective) ? new Date(dose.scheduled_at).getTime() : effective;
 }
 
 /** The wall-clock date in her timezone for a given instant. */

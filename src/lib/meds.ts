@@ -26,6 +26,21 @@ export interface Medication {
   times_of_day: string[];     // ['08:00','20:00'] — local (user tz)
   start_date: string;         // YYYY-MM-DD
   duration_days: number | null; // null = ongoing
+  /**
+   * Shortest acceptable gap between two doses of THIS medicine, in minutes.
+   *
+   * When a dose is taken late, the next one's reminder is pushed back so it
+   * still lands at least this far after the tablet she actually swallowed —
+   * taking the 08:00 Metronidazole at 10:30 should not leave the 14:00 dose
+   * only three and a half hours behind it.
+   *
+   * null means "derive it from this medicine's own times" (see
+   * defaultMinGapMinutes), so the default tracks the schedule rather than a
+   * frequency label: TDS at 08:00/14:00/20:00 is 6h apart by day, and a gap
+   * derived from that is right where one derived from "three times daily"
+   * would not be.
+   */
+  min_gap_minutes: number | null;
   food_instruction: FoodInstruction;
   notes: string | null;
   color: string;              // tailwind-ish token used by the UI
@@ -35,7 +50,14 @@ export interface Medication {
   updated_at: string;
 }
 
-export type MedicationInput = Omit<Medication, 'id' | 'user_id' | 'created_at' | 'updated_at'>;
+/**
+ * `min_gap_minutes` is optional here, and omitting it stores null — which means
+ * "derive the gap from this medicine's own times". That is the right default for
+ * almost every medicine, so callers should have to opt IN to overriding it.
+ */
+export type MedicationInput =
+  Omit<Medication, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'min_gap_minutes'>
+  & { min_gap_minutes?: number | null };
 
 export interface MedSettings {
   user_id: string;
@@ -83,6 +105,21 @@ export interface ScheduledDose {
   status: DoseStatus;
   taken_at: string | null;
   snoozed_until: string | null;
+  /**
+   * When this dose should actually be reminded about — `scheduled_at`, unless
+   * the PREVIOUS dose of the same medicine was taken late enough that keeping
+   * the original time would break the minimum gap. Never earlier than
+   * `scheduled_at`; a dose taken early never pulls the next one forward.
+   *
+   * The dose's identity stays keyed on `scheduled_at`, so deferring changes
+   * only when she is nudged, never which dose this is. That is what keeps the
+   * log join, the adherence count and the schedule stable.
+   */
+  effective_at: string;
+  /** 0 when not deferred. Drives the "moved to HH:MM" explanation in the UI. */
+  deferred_by_minutes: number;
+  /** The actual taken-time of the previous dose that caused the deferral. */
+  defer_after_taken_at: string | null;
 }
 
 /**
@@ -281,6 +318,9 @@ export async function initMedsSchema(): Promise<void> {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_medications_user ON medications(user_id)`;
+  // Added after the table shipped. Nullable on purpose: null means "derive the
+  // gap from this medicine's own times", so existing rows keep working untouched.
+  await sql`ALTER TABLE medications ADD COLUMN IF NOT EXISTS min_gap_minutes INTEGER`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS medication_doses (
@@ -494,6 +534,7 @@ function mapMedication(row: Record<string, unknown>): Medication {
     times_of_day: parseTimes(row.times_of_day).slice().sort(),
     start_date: toISODate(row.start_date),
     duration_days: row.duration_days != null ? Number(row.duration_days) : null,
+    min_gap_minutes: row.min_gap_minutes != null ? Number(row.min_gap_minutes) : null,
     food_instruction: String(row.food_instruction) as FoodInstruction,
     notes: row.notes ? String(row.notes) : null,
     color: String(row.color),
@@ -592,8 +633,8 @@ export async function updateSettings(userId: string, patch: Partial<MedSettings>
  */
 const MED_COLUMNS = `
   id, user_id, name, strength, form, dose_label, frequency_code, times_of_day,
-  start_date::text AS start_date, duration_days, food_instruction, notes, color,
-  active, sort_order, created_at, updated_at
+  start_date::text AS start_date, duration_days, min_gap_minutes, food_instruction,
+  notes, color, active, sort_order, created_at, updated_at
 `;
 
 export async function getMedications(userId: string): Promise<Medication[]> {
@@ -609,14 +650,15 @@ export async function createMedication(userId: string, input: MedicationInput): 
   const result = await sql.query(
     `INSERT INTO medications (
        user_id, name, strength, form, dose_label, frequency_code, times_of_day,
-       start_date, duration_days, food_instruction, notes, color, active, sort_order
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       start_date, duration_days, min_gap_minutes, food_instruction, notes, color,
+       active, sort_order
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      RETURNING ${MED_COLUMNS}`,
     [
       userId, input.name, input.strength ?? null, input.form, input.dose_label,
       input.frequency_code, JSON.stringify(input.times_of_day), input.start_date,
-      input.duration_days ?? null, input.food_instruction, input.notes ?? null,
-      input.color, input.active, input.sort_order,
+      input.duration_days ?? null, input.min_gap_minutes ?? null, input.food_instruction,
+      input.notes ?? null, input.color, input.active, input.sort_order,
     ]
   );
   return mapMedication(result.rows[0]);
@@ -624,7 +666,8 @@ export async function createMedication(userId: string, input: MedicationInput): 
 
 const MED_FIELDS = [
   'name', 'strength', 'form', 'dose_label', 'frequency_code', 'times_of_day',
-  'start_date', 'duration_days', 'food_instruction', 'notes', 'color', 'active', 'sort_order',
+  'start_date', 'duration_days', 'min_gap_minutes', 'food_instruction', 'notes', 'color',
+  'active', 'sort_order',
 ] as const;
 
 export async function updateMedication(
@@ -731,8 +774,8 @@ export function computeDosesForDate(
   meds: Medication[],
   dateStr: string,
   offsetMin: number
-): Omit<ScheduledDose, 'status' | 'taken_at' | 'snoozed_until'>[] {
-  const out: Omit<ScheduledDose, 'status' | 'taken_at' | 'snoozed_until'>[] = [];
+): PlannedDose[] {
+  const out: PlannedDose[] = [];
   for (const med of meds) {
     if (!isActiveOn(med, dateStr)) continue;
     for (const time of med.times_of_day) {
@@ -755,6 +798,123 @@ export function computeDosesForDate(
   return out.sort((a, b) => a.time.localeCompare(b.time) || a.name.localeCompare(b.name));
 }
 
+// ------------------------------------------------------- minimum dose spacing
+
+/** Smallest gap between consecutive configured times, wrapping past midnight. */
+export function tightestIntervalMinutes(times: string[]): number {
+  const mins = times
+    .map(t => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    })
+    .filter(n => Number.isFinite(n))
+    .sort((a, b) => a - b);
+  if (mins.length < 2) return 24 * 60;
+  let smallest = Infinity;
+  for (let i = 0; i < mins.length; i++) {
+    const next = i + 1 < mins.length ? mins[i + 1] : mins[0] + 1440;
+    smallest = Math.min(smallest, next - mins[i]);
+  }
+  return smallest === Infinity ? 24 * 60 : smallest;
+}
+
+/**
+ * The gap to enforce when no explicit one is set: three quarters of the
+ * tightest interval the medicine is actually scheduled at.
+ *
+ * Not the full interval, deliberately. Enforcing the whole 6h after a dose
+ * taken 2h late would push every later dose back by 2h too and quietly cost her
+ * the day's third dose — for an antibiotic, completing the day's doses matters
+ * as much as spacing them. Three quarters stops doses stacking dangerously
+ * close while still leaving room to catch up.
+ *
+ * TDS 08:00/14:00/20:00 -> tightest 6h -> 4h30. BD 08:00/20:00 -> 9h. OD -> 18h.
+ */
+export function defaultMinGapMinutes(times: string[]): number {
+  const tightest = tightestIntervalMinutes(times);
+  return Math.max(30, Math.round((tightest * 0.75) / 15) * 15);
+}
+
+export function effectiveMinGapMinutes(med: Medication): number {
+  return med.min_gap_minutes ?? defaultMinGapMinutes(med.times_of_day);
+}
+
+export interface DoseTiming {
+  effective_at: string;
+  deferred_by_minutes: number;
+  defer_after_taken_at: string | null;
+}
+
+/**
+ * A dose as the schedule alone describes it — before anything is known about
+ * whether it was taken, or about when the dose before it actually was.
+ */
+export type PlannedDose = Omit<
+  ScheduledDose,
+  'status' | 'taken_at' | 'snoozed_until' | 'effective_at' | 'deferred_by_minutes' | 'defer_after_taken_at'
+>;
+
+/**
+ * Work out when each dose should actually be reminded about, given when the
+ * previous dose of the same medicine was really swallowed.
+ *
+ * Only the IMMEDIATELY preceding dose is consulted, so a deferral cannot
+ * cascade: if that dose was also late, it has already been shifted relative to
+ * ITS predecessor, and each dose is measured against the tablet actually taken
+ * before it rather than against a growing chain of estimates.
+ *
+ * `doses` must include the day BEFORE the one being rendered, or the first dose
+ * of the day has no predecessor to measure against — an overnight-late dose is
+ * exactly the case this exists for.
+ *
+ * Pure: no clock, no database. That is what makes it testable.
+ */
+export function computeDoseTimings(
+  doses: PlannedDose[],
+  medsById: Map<string, Medication>,
+  takenAtByKey: Map<string, string>
+): Map<string, DoseTiming> {
+  const byMed = new Map<string, PlannedDose[]>();
+  for (const d of doses) {
+    const list = byMed.get(d.medication_id);
+    if (list) list.push(d);
+    else byMed.set(d.medication_id, [d]);
+  }
+
+  const out = new Map<string, DoseTiming>();
+  for (const [medId, list] of byMed) {
+    const med = medsById.get(medId);
+    const gapMs = med ? effectiveMinGapMinutes(med) * 60_000 : 0;
+    const ordered = [...list].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+
+    for (let i = 0; i < ordered.length; i++) {
+      const dose = ordered[i];
+      const scheduledMs = new Date(dose.scheduled_at).getTime();
+      let effectiveMs = scheduledMs;
+      let after: string | null = null;
+
+      const prev = i > 0 ? ordered[i - 1] : null;
+      const prevTaken = prev ? takenAtByKey.get(prev.key) : undefined;
+      if (prevTaken && gapMs > 0) {
+        const earliest = new Date(prevTaken).getTime() + gapMs;
+        // Only ever pushes later. Taking a dose EARLY must not drag the next
+        // one forward into a gap she never agreed to.
+        if (earliest > effectiveMs) {
+          effectiveMs = earliest;
+          after = new Date(prevTaken).toISOString();
+        }
+      }
+
+      out.set(dose.key, {
+        effective_at: new Date(effectiveMs).toISOString(),
+        deferred_by_minutes: Math.round((effectiveMs - scheduledMs) / 60_000),
+        defer_after_taken_at: after,
+      });
+    }
+  }
+  return out;
+}
+
 /** Full day view: expected doses joined with whatever was logged against them. */
 export async function getDayView(
   userId: string,
@@ -763,27 +923,51 @@ export async function getDayView(
   const [settings, medications] = await Promise.all([getSettings(userId), getMedications(userId)]);
   const expected = computeDosesForDate(medications, dateStr, settings.tz_offset_minutes);
 
+  // The previous day is computed too, purely so the first dose of `dateStr` has
+  // a predecessor to measure its minimum gap against. Those doses are used for
+  // timing and then dropped — only `dateStr` is returned.
+  const prior = computeDosesForDate(
+    medications,
+    addDays(dateStr, -1),
+    settings.tz_offset_minutes
+  );
+
   const dayStart = scheduledAtUTC(dateStr, '00:00', settings.tz_offset_minutes);
   const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  // Widened to cover the lookback day as well, so a late dose last night can
+  // still defer this morning's.
+  const lookbackStart = new Date(dayStart.getTime() - 86_400_000);
   const logged = await sql`
     SELECT medication_id, scheduled_at, status, taken_at, snoozed_until
     FROM medication_doses
     WHERE user_id = ${userId}
-      AND scheduled_at >= ${dayStart.toISOString()}
+      AND scheduled_at >= ${lookbackStart.toISOString()}
       AND scheduled_at < ${dayEnd.toISOString()}
   `;
   const logMap = new Map<string, Record<string, unknown>>();
+  const takenAtByKey = new Map<string, string>();
   for (const row of logged.rows) {
-    logMap.set(`${String(row.medication_id)}|${new Date(String(row.scheduled_at)).toISOString()}`, row);
+    const key = `${String(row.medication_id)}|${new Date(String(row.scheduled_at)).toISOString()}`;
+    logMap.set(key, row);
+    if (String(row.status) === 'taken' && row.taken_at) {
+      takenAtByKey.set(key, toISOTimestamp(row.taken_at));
+    }
   }
+
+  const medsById = new Map(medications.map(m => [m.id, m]));
+  const timings = computeDoseTimings([...prior, ...expected], medsById, takenAtByKey);
 
   const doses: ScheduledDose[] = expected.map(d => {
     const log = logMap.get(d.key);
+    const timing = timings.get(d.key);
     return {
       ...d,
       status: (log ? String(log.status) : 'pending') as DoseStatus,
       taken_at: log?.taken_at ? toISOTimestamp(log.taken_at) : null,
       snoozed_until: log?.snoozed_until ? toISOTimestamp(log.snoozed_until) : null,
+      effective_at: timing?.effective_at ?? d.scheduled_at,
+      deferred_by_minutes: timing?.deferred_by_minutes ?? 0,
+      defer_after_taken_at: timing?.defer_after_taken_at ?? null,
     };
   });
 
@@ -843,10 +1027,15 @@ export async function logDose(
   scheduledAt: string,
   status: DoseStatus,
   snoozeMinutes?: number,
-  guardSettled = false
+  guardSettled = false,
+  takenAtISO?: string
 ): Promise<LogDoseResult> {
   const at = new Date(scheduledAt).toISOString();
-  const takenAt = status === 'taken' ? new Date().toISOString() : null;
+  // She confirms when she actually swallowed it, which is not always now — and
+  // the next dose's minimum gap is measured from this value, so "now" would
+  // quietly overstate the spacing every time she ticks a dose off late.
+  const takenAt =
+    status === 'taken' ? new Date(takenAtISO ?? Date.now()).toISOString() : null;
   const snoozedUntil = snoozeMinutes
     ? new Date(Date.now() + snoozeMinutes * 60_000).toISOString()
     : null;
@@ -1070,15 +1259,25 @@ export async function getDueDosesForDispatch(
     // scheduled time, so the candidate filter below needs snoozed_until. The
     // lookback covers both computed days in full regardless of tz offset.
     const logged = await sql`
-      SELECT medication_id, scheduled_at, status, snoozed_until, notified_count, last_notified_at
+      SELECT medication_id, scheduled_at, status, taken_at, snoozed_until, notified_count, last_notified_at
       FROM medication_doses
       WHERE user_id = ${userId}
         AND scheduled_at >= ${new Date(now - 72 * 60 * 60_000).toISOString()}
     `;
     const logMap = new Map<string, Record<string, unknown>>();
+    const takenAtByKey = new Map<string, string>();
     for (const l of logged.rows) {
-      logMap.set(`${String(l.medication_id)}|${new Date(String(l.scheduled_at)).toISOString()}`, l);
+      const key = `${String(l.medication_id)}|${new Date(String(l.scheduled_at)).toISOString()}`;
+      logMap.set(key, l);
+      if (String(l.status) === 'taken' && l.taken_at) {
+        takenAtByKey.set(key, toISOTimestamp(l.taken_at));
+      }
     }
+
+    // `expected` already spans yesterday and today, so every dose here has its
+    // predecessor available to measure the minimum gap against.
+    const medsById = new Map(medications.map(m => [m.id, m]));
+    const timings = computeDoseTimings(expected, medsById, takenAtByKey);
 
     const due: DueDose[] = [];
     for (const c of expected) {
@@ -1087,10 +1286,14 @@ export async function getDueDosesForDispatch(
       if (isSettledStatus(status)) continue;
 
       const scheduledMs = new Date(c.scheduled_at).getTime();
+      const timing = timings.get(c.key);
+      // A late previous dose pushes this one's reminder back, so she is never
+      // told to take the next tablet too soon after the one she just swallowed.
+      const effectiveMs = timing ? new Date(timing.effective_at).getTime() : scheduledMs;
       const snoozedUntilMs = log?.snoozed_until ? new Date(String(log.snoozed_until)).getTime() : 0;
 
       // When she snoozes, the dose is not due again until the snooze runs out.
-      const effectiveWake = Math.max(scheduledMs, snoozedUntilMs || 0);
+      const effectiveWake = Math.max(effectiveMs, snoozedUntilMs || 0);
       if (now < effectiveWake) continue;
       if (now - effectiveWake > effectiveGraceMin * 60_000) continue;
 
@@ -1107,10 +1310,15 @@ export async function getDueDosesForDispatch(
         status: 'pending',
         taken_at: null,
         snoozed_until: snoozedUntilMs ? new Date(snoozedUntilMs).toISOString() : null,
+        effective_at: timing?.effective_at ?? c.scheduled_at,
+        deferred_by_minutes: timing?.deferred_by_minutes ?? 0,
+        defer_after_taken_at: timing?.defer_after_taken_at ?? null,
         user_id: userId,
-        // Measured from the scheduled time, not the snooze — this is how late
-        // the medicine itself is, which is what the notification wording uses.
-        overdue_minutes: Math.round((now - scheduledMs) / 60_000),
+        // Measured from the EFFECTIVE time, not the scheduled one: once a dose
+        // has been deliberately pushed back it is not late until the new time
+        // passes, and calling it "2h overdue" the moment it is deferred would
+        // be both wrong and alarming.
+        overdue_minutes: Math.round((now - effectiveMs) / 60_000),
       });
     }
     if (due.length > 0) result.set(userId, due);

@@ -325,6 +325,10 @@ export default function MedsPage() {
       options?: DoseActionOptions
     ) => {
       const force = options?.force === true;
+      // Falls back to now, so any caller that does not ask her (the alarm
+      // overlay's TAKEN button, the service worker) still records something sane.
+      const takenAtISO =
+        status === 'taken' ? options?.takenAt ?? new Date().toISOString() : null;
       const previousStatus = dose.status;
       setBusyKey(dose.key);
       setData((prev) =>
@@ -336,7 +340,7 @@ export default function MedsPage() {
                   ? {
                       ...d,
                       status,
-                      taken_at: status === 'taken' ? new Date().toISOString() : null,
+                      taken_at: takenAtISO,
                       snoozed_until: snoozeMin
                         ? new Date(Date.now() + snoozeMin * 60_000).toISOString()
                         : null,
@@ -357,6 +361,7 @@ export default function MedsPage() {
             status,
             ...(snoozeMin ? { snooze_minutes: snoozeMin } : {}),
             ...(force ? { force: true } : {}),
+            ...(takenAtISO ? { taken_at: takenAtISO } : {}),
           }),
         });
         const json = await res.json().catch(() => ({}));
