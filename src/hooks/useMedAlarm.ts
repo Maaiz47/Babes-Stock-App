@@ -34,9 +34,10 @@ export interface AlarmState {
   /** The dose the alert on screen is about. */
   activeDose: ScheduledDose | null;
   /**
-   * True while an alert is up for `activeDose`. The *sound* can be suppressed
-   * underneath it by quiet hours — quiet hours silence noise, they never hide
-   * the fact that a dose is due.
+   * True while an alert is up for `activeDose`, and an alert that is up is
+   * always audible. Nothing in this hook may suppress reminder sound by time of
+   * day: this engine only ever reminds about medicine, so the 22:00 dose is
+   * exactly the one that has to wake her.
    */
   ringing: boolean;
   permission: NotificationPermission; // 'default' | 'granted' | 'denied'
@@ -45,10 +46,27 @@ export interface AlarmState {
   supported: boolean;
 }
 
+/**
+ * Extra intent carried alongside a dose write.
+ *
+ * `force` means "she tapped this, in the app, just now" — the only thing allowed
+ * to move a dose out of a settled ('taken' / 'skipped') status. This hook never
+ * sets it: the one write it makes is a replay of a notification button, and a
+ * lock-screen reminder can outlive the dose it names by hours.
+ */
+export interface DoseActionOptions {
+  force?: boolean;
+}
+
 interface UseMedAlarmOptions {
   doses: ScheduledDose[];
   settings: MedSettings | null;
-  onAction: (dose: ScheduledDose, status: 'taken' | 'skipped', snoozeMin?: number) => Promise<void>;
+  onAction: (
+    dose: ScheduledDose,
+    status: 'taken' | 'skipped',
+    snoozeMin?: number,
+    options?: DoseActionOptions
+  ) => Promise<void>;
 }
 
 interface UseMedAlarmResult {
@@ -123,33 +141,6 @@ function localDate(ms: number, tzOffsetMin: number): string {
   return new Date(ms + tzOffsetMin * 60_000).toISOString().slice(0, 10);
 }
 
-/** Minutes since local midnight, in her timezone. */
-function localMinutes(ms: number, tzOffsetMin: number): number {
-  const shifted = new Date(ms + tzOffsetMin * 60_000);
-  return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
-}
-
-function parseHHMM(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
-  if (!match) return null;
-  const h = Number(match[1]);
-  const m = Number(match[2]);
-  if (!Number.isFinite(h) || !Number.isFinite(m) || h > 23 || m > 59) return null;
-  return h * 60 + m;
-}
-
-/** Quiet hours silence the sound only — the dose still shows as overdue. */
-function inQuietHours(settings: MedSettings, now: number): boolean {
-  const start = parseHHMM(settings.quiet_hours_start);
-  const end = parseHHMM(settings.quiet_hours_end);
-  if (start === null || end === null || start === end) return false;
-
-  const minutes = localMinutes(now, settings.tz_offset_minutes);
-  // A window like 22:00 -> 07:00 wraps around midnight.
-  return start < end ? minutes >= start && minutes < end : minutes >= start || minutes < end;
-}
-
 /**
  * Does this dose still want a reminder in front of her?
  *
@@ -159,14 +150,18 @@ function inQuietHours(settings: MedSettings, now: number): boolean {
  */
 function doseNeedsReminder(dose: ScheduledDose, now: number, localSnoozeUntil?: number): boolean {
   if (dose.status !== 'pending') return false;
-
-  if (dose.snoozed_until) {
-    const until = new Date(dose.snoozed_until).getTime();
-    if (Number.isFinite(until) && now < until) return false;
-  }
-  if (localSnoozeUntil && now < localSnoozeUntil) return false;
-
+  if (now < snoozeWakeAt(dose, localSnoozeUntil)) return false;
   return true;
+}
+
+/**
+ * The instant a snoozed dose is due to speak up again, or 0 when no snooze is
+ * running. Takes the later of what the server stored and any snooze taken from
+ * a notification button that this page has not refetched yet.
+ */
+function snoozeWakeAt(dose: ScheduledDose, localSnoozeUntil?: number): number {
+  const stored = dose.snoozed_until ? new Date(dose.snoozed_until).getTime() : NaN;
+  return Math.max(Number.isFinite(stored) ? stored : 0, localSnoozeUntil ?? 0);
 }
 
 // ---------------------------------------------------------------- notification
@@ -187,37 +182,56 @@ async function getRegistration(): Promise<ServiceWorkerRegistration | null> {
 }
 
 /**
- * The `${medication_id}|${scheduled_at}` key a notification is about, or null
- * when it does not name one single dose (a grouped "3 medicines due" reminder
- * carries no medication id, and its buttons deliberately write nothing).
+ * Every `${medication_id}|${scheduled_at}` dose key a notification stands for.
+ *
+ * A single-dose reminder names its dose through `medicationId` / `scheduledAt`
+ * — the same two fields its action buttons write with. A grouped one ("3
+ * medicines due") has no single medication id, so the dispatcher lists every
+ * dose it covers in `doseKeys`; without that list the group could never be
+ * matched against the schedule and so outlived every dose in it being ticked
+ * off. Empty means "we cannot tell what this is about" — such a notification is
+ * always left alone.
  */
-function notificationDoseKey(notification: Notification): string | null {
-  const data = notification.data as { medicationId?: unknown; scheduledAt?: unknown } | null | undefined;
-  if (!data || typeof data !== 'object') return null;
+function notificationDoseKeys(notification: Notification): string[] {
+  const data = notification.data as
+    | { doseKeys?: unknown; medicationId?: unknown; scheduledAt?: unknown }
+    | null
+    | undefined;
+  if (!data || typeof data !== 'object') return [];
+
+  if (Array.isArray(data.doseKeys)) {
+    const keys = data.doseKeys.filter((k): k is string => typeof k === 'string' && k.length > 0);
+    if (keys.length > 0) return keys;
+  }
 
   const medicationId = typeof data.medicationId === 'string' ? data.medicationId : '';
   const scheduledAt = typeof data.scheduledAt === 'string' ? data.scheduledAt : '';
-  if (!medicationId || !scheduledAt) return null;
+  if (!medicationId || !scheduledAt) return [];
 
   const at = new Date(scheduledAt).getTime();
-  if (!Number.isFinite(at)) return null;
-  return `${medicationId}|${new Date(at).toISOString()}`;
+  if (!Number.isFinite(at)) return [];
+  return [`${medicationId}|${new Date(at).toISOString()}`];
 }
 
 /**
- * Take down any notification still on screen for one of these doses.
+ * Take down every notification whose doses have all been dealt with.
  *
  * This is a safety fix, not tidiness: both halves of the system post with
  * `requireInteraction: true`, so a reminder sits there until it is tapped. Its
  * "Snooze" button would then rewrite a dose she has already taken back to
  * pending and start alarming for a dose that is already in her.
  *
+ * `settled` is the set of dose keys we currently believe need no reminder. A
+ * notification is closed only when EVERY dose it names is in that set, so a
+ * grouped reminder survives until the last of its doses is settled — one ticked
+ * medicine out of three must not take the reminder for the other two away.
+ *
  * The list is fetched unfiltered rather than with `{ tag: DOSE_TAG }`: matching
  * is done on the dose identity carried in `data`, which is exact, so a tag
  * filter could only ever lose a notification that needs closing.
  */
-async function closeNotificationsForKeys(keys: Set<string>): Promise<void> {
-  if (keys.size === 0) return;
+async function closeSettledNotifications(settled: Set<string>): Promise<void> {
+  if (settled.size === 0) return;
   if (typeof window === 'undefined') return;
 
   try {
@@ -226,8 +240,10 @@ async function closeNotificationsForKeys(keys: Set<string>): Promise<void> {
 
     const shown = await registration.getNotifications();
     for (const notification of shown) {
-      const key = notificationDoseKey(notification);
-      if (key && keys.has(key) && typeof notification.close === 'function') notification.close();
+      const keys = notificationDoseKeys(notification);
+      if (keys.length === 0) continue;
+      if (!keys.every(key => settled.has(key))) continue;
+      if (typeof notification.close === 'function') notification.close();
     }
   } catch {
     /* closing notifications is best effort — never let it break the alarm */
@@ -235,51 +251,54 @@ async function closeNotificationsForKeys(keys: Set<string>): Promise<void> {
 }
 
 /**
- * Post the reminder through the service worker when we can: notifications shown
- * by a registration survive the tab being backgrounded and can carry buttons,
- * which `new Notification()` cannot.
+ * Post the reminder through the service worker registration — and only through
+ * it.
+ *
+ * There is deliberately no `new Notification()` fallback. One posted that way
+ * belongs to the page rather than the registration, so `getNotifications()`
+ * never returns it and nothing above could ever close it: it would sit on the
+ * lock screen with live "Taken" / "Snooze" buttons long after the dose was
+ * dealt with, which is the exact hazard this file spends its time preventing.
+ * It also carries neither action buttons nor `requireInteraction`, so it is a
+ * worse reminder in the first place. With no registration we post nothing — the
+ * audible alarm and the full-screen overlay are the real reminder here, and the
+ * registration is created on mount so this is very nearly unreachable.
  */
-async function showDoseNotification(dose: ScheduledDose, silent: boolean): Promise<void> {
+async function showDoseNotification(dose: ScheduledDose): Promise<void> {
   if (!isNotificationSupported() || Notification.permission !== 'granted') return;
 
   const title = 'Time for your medicine';
   // `vibrate`, `renotify` and `actions` are real, widely-shipped fields that the
   // DOM typings still do not carry — hence the cast.
-  const base = {
+  //
+  // Never silent, and always with a vibration pattern: a reminder she cannot
+  // hear is a missed dose, whatever the hour.
+  const options = {
     body: doseBody(dose),
     tag: DOSE_TAG,
     renotify: true,
     requireInteraction: true,
+    silent: false,
+    vibrate: VIBRATE_PATTERN,
     icon: '/icon-192.png',
     badge: '/badge-72.png',
     data: {
       url: '/meds',
       medicationId: dose.medication_id,
       scheduledAt: dose.scheduled_at,
+      // Same shape the pushed reminders carry, so one close path covers both.
+      doseKeys: [dose.key],
     },
     actions: [
       { action: 'taken', title: 'Taken' },
       { action: 'snooze', title: 'Snooze 10m' },
     ],
-  };
-  // A silent notification must not carry a vibration pattern — Chrome throws a
-  // TypeError on that combination — so the two are never both present.
-  const options = (
-    silent ? { ...base, silent: true } : { ...base, silent: false, vibrate: VIBRATE_PATTERN }
-  ) as unknown as NotificationOptions;
+  } as unknown as NotificationOptions;
 
   try {
     const registration = await getRegistration();
-    if (registration) {
-      await registration.showNotification(title, options);
-      return;
-    }
-  } catch {
-    /* fall through to the plain Notification below */
-  }
-
-  try {
-    new Notification(title, options);
+    if (!registration || typeof registration.showNotification !== 'function') return;
+    await registration.showNotification(title, options);
   } catch {
     /* notifications are best-effort; the audible alarm is the real reminder */
   }
@@ -309,11 +328,11 @@ export function useMedAlarm({ doses, settings, onAction }: UseMedAlarmOptions): 
    *  - `alertingRef`   that alert is still live (she has not stopped or dealt with it)
    *  - `soundingRef`   the audio engine is running *right now*
    *
-   * They come apart during quiet hours: the alert stays live and visible while
-   * the sound is off. Collapsing them into one flag is what let a dose that fell
-   * inside quiet hours pin the engine — quiet hours were then evaluated exactly
-   * once for that dose, never re-checked when the window ended, and every later
-   * dose was short-circuited behind it.
+   * Nothing may now silence an alert while leaving it up — quiet hours were the
+   * only thing that did, and they are gone. The three are still kept apart so
+   * that a live alert which has somehow fallen quiet is a state `evaluate` can
+   * see and repair (it starts the sound again) rather than one it cannot
+   * represent; a mute alert is the failure this whole file exists to avoid.
    */
   const activeKeyRef = useRef<string | null>(null);
   const alertingRef = useRef(false);
@@ -339,20 +358,42 @@ export function useMedAlarm({ doses, settings, onAction }: UseMedAlarmOptions): 
   // -------------------------------------------------------------- ring control
 
   /**
+   * Every dose key we currently believe needs no reminder, plus — optionally —
+   * one she has just actioned from a notification button, which the page has
+   * not refetched yet. Grouped reminders are matched against this whole set,
+   * so it has to describe the day rather than the single dose in hand.
+   */
+  const collectSettledKeys = useCallback((justActioned?: string): Set<string> => {
+    const now = Date.now();
+    const settled = new Set<string>();
+    for (const dose of dosesRef.current) {
+      if (!doseNeedsReminder(dose, now, localSnoozeRef.current.get(dose.key))) settled.add(dose.key);
+    }
+    if (justActioned) settled.add(justActioned);
+    return settled;
+  }, []);
+
+  /**
    * Close the notification for a dose we are letting go of, but only when the
    * data we hold says it no longer needs a reminder. Deliberately conservative:
    * a dose that is simply not in the current list (she is looking at another
    * day) tells us nothing, and dropping a live reminder is far worse than
    * leaving a stale one on screen for a few more minutes.
    */
-  const closeSettledNotification = useCallback((key: string) => {
-    const dose = dosesRef.current.find(d => d.key === key);
-    if (!dose) return;
-    if (doseNeedsReminder(dose, Date.now(), localSnoozeRef.current.get(key))) return;
-    void closeNotificationsForKeys(new Set([key]));
-  }, []);
+  const closeSettledNotification = useCallback(
+    (key: string) => {
+      const dose = dosesRef.current.find(d => d.key === key);
+      if (!dose) return;
+      if (doseNeedsReminder(dose, Date.now(), localSnoozeRef.current.get(key))) return;
+      void closeSettledNotifications(collectSettledKeys());
+    },
+    [collectSettledKeys]
+  );
 
-  /** She asked for quiet. The dose stays on screen; the repeat timer brings it back. */
+  /**
+   * She silenced this alert. Nothing is recorded against the dose: it stays due
+   * on the checklist, and the repeat budget brings the alarm back.
+   */
   const stopRinging = useCallback(() => {
     stopAlarm();
     soundingRef.current = false;
@@ -409,25 +450,13 @@ export function useMedAlarm({ doses, settings, onAction }: UseMedAlarmOptions): 
     const activeDose = activeKey ? candidates.find(d => d.key === activeKey) : undefined;
     if (activeKey && !activeDose) dismissActive();
 
-    // Quiet hours are re-read on EVERY tick, for a dose that is already alerting
-    // as much as for a new one. Deciding it once, when the dose first came due,
-    // is what left a 07:00 dose silent for the rest of a 22:00 -> 08:00 window
-    // and every dose behind it unannounced with it.
-    const quiet = inQuietHours(currentSettings, now);
-
-    // An alert that is already up stays up; only its sound follows quiet hours.
+    // An alert that is already up stays up, and it is always audible. If the
+    // sound is not running underneath it — the audio engine was interrupted, or
+    // it never managed to start — start it here rather than leaving a mute
+    // reminder on screen. Nothing sets `alertingRef` without `soundingRef` any
+    // more, so this is a repair path, not the normal one.
     if (activeDose && alertingRef.current) {
-      if (quiet) {
-        if (soundingRef.current) {
-          // The window opened underneath a sounding alarm. Drop the noise, keep
-          // the alert: `alertingRef` stays set, so the sound comes back below
-          // the moment the window ends.
-          stopAlarm();
-          soundingRef.current = false;
-        }
-      } else if (!soundingRef.current) {
-        // Either the window just ended, or this alert started inside it. Either
-        // way she is meant to hear this one now.
+      if (!soundingRef.current) {
         startAlarm(normalizeAlarmSound(currentSettings.alarm_sound), currentSettings.alarm_volume);
         vibratePattern();
         soundingRef.current = true;
@@ -455,19 +484,11 @@ export function useMedAlarm({ doses, settings, onAction }: UseMedAlarmOptions): 
     alertingRef.current = true;
     setRing({ activeDose: next, ringing: true });
 
-    if (quiet) {
-      // Belt and braces: never leave the engine running behind a silent alert.
-      if (soundingRef.current) stopAlarm();
-      soundingRef.current = false;
-    } else {
-      startAlarm(normalizeAlarmSound(currentSettings.alarm_sound), currentSettings.alarm_volume);
-      vibratePattern();
-      soundingRef.current = true;
-    }
+    startAlarm(normalizeAlarmSound(currentSettings.alarm_sound), currentSettings.alarm_volume);
+    vibratePattern();
+    soundingRef.current = true;
 
-    // The reminder itself is always posted. Quiet hours only take away the noise:
-    // silent, no vibration, but still on the lock screen and still overdue.
-    void showDoseNotification(next, quiet);
+    void showDoseNotification(next);
   }, [dismissActive, isRingable]);
 
   // -------------------------------------------------------------- lifecycle
@@ -502,19 +523,27 @@ export function useMedAlarm({ doses, settings, onAction }: UseMedAlarmOptions): 
     evaluate();
   }, [doses, settings, evaluate]);
 
-  // A notification for a dose that has since been taken, skipped or snoozed is
-  // not just clutter: its buttons stay live, and a stray "Snooze" tap hours later
-  // would rewrite a taken dose back to pending. Fresh data is the moment to take
-  // them down, whichever route actioned the dose — this page, the notification
-  // buttons, or another device.
+  // Fresh data is the moment to reconcile two things with it.
+  //
+  // 1. A notification for a dose that has since been taken, skipped or snoozed
+  //    is not just clutter: its buttons stay live, and a stray "Snooze" tap
+  //    hours later would rewrite a taken dose back to pending. Take it down
+  //    whichever route actioned the dose — this page, the notification buttons,
+  //    or another device.
+  // 2. A snooze buys a dose a new wake time, so it must buy it a new ring budget
+  //    too. Without this the count from before the snooze survived it, and once
+  //    the budget was spent, snoozing brought nothing back: the alarm went quiet
+  //    for good on a dose she had explicitly asked to be reminded about again.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const now = Date.now();
     const settled = new Set<string>();
     for (const dose of doses) {
-      if (!doseNeedsReminder(dose, now, localSnoozeRef.current.get(dose.key))) settled.add(dose.key);
+      const localSnooze = localSnoozeRef.current.get(dose.key);
+      if (!doseNeedsReminder(dose, now, localSnooze)) settled.add(dose.key);
+      if (snoozeWakeAt(dose, localSnooze) > now) ringsRef.current.delete(dose.key);
     }
-    void closeNotificationsForKeys(settled);
+    void closeSettledNotifications(settled);
   }, [doses]);
 
   // Coming back to the app is the moment she is most likely to act on a dose.
@@ -545,29 +574,34 @@ export function useMedAlarm({ doses, settings, onAction }: UseMedAlarmOptions): 
       const key = `${data.medicationId}|${data.scheduledAt}`;
       const dose = dosesRef.current.find(d => d.key === key);
 
-      // She has just dealt with this dose from a notification, so any other
-      // notification still up for it is stale by definition.
-      void closeNotificationsForKeys(new Set([key]));
-
       if (data.action === 'snooze') {
         const minutes = data.snoozeMinutes ?? settingsRef.current?.snooze_min ?? 10;
         localSnoozeRef.current.set(key, Date.now() + minutes * 60_000);
+        // New wake time, new ring budget — see the effect above.
+        ringsRef.current.delete(key);
         if (activeKeyRef.current === key) dismissActive();
+        // Only now, with the snooze recorded, does this dose count as settled.
+        void closeSettledNotifications(collectSettledKeys(key));
         return;
       }
 
       if (data.action === 'taken') {
         if (activeKeyRef.current === key) dismissActive();
+        // The page has not refetched yet, so this dose still reads 'pending'
+        // here — name it explicitly as the one she just dealt with.
+        void closeSettledNotifications(collectSettledKeys(key));
         // The worker already wrote it; replaying through onAction is what pulls
         // the fresh state back into the page. The write is an upsert, so doing
-        // it twice is harmless.
+        // it twice is harmless. No `force`: this is a notification button, and
+        // one can sit on the lock screen for hours after the dose was settled
+        // in the app — it must never overwrite a decision she made since.
         if (dose) void onActionRef.current(dose, 'taken');
       }
     };
 
     navigator.serviceWorker.addEventListener('message', onMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
-  }, [dismissActive]);
+  }, [dismissActive, collectSettledKeys]);
 
   // Never leave a sound running behind an unmounted screen.
   useEffect(() => {

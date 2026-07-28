@@ -194,6 +194,30 @@ export function slotOf(time: string): SlotKey {
 
 /* ---------------------------------------------------------------- props */
 
+/**
+ * Extra intent carried alongside a dose write.
+ *
+ * `force` means "she tapped this, in the app, just now". It is the only thing
+ * allowed to move a dose out of a settled status ('taken' / 'skipped'); without
+ * it the API answers 409 and writes nothing. Every action in this file is such
+ * a tap, so every one of them sets it — otherwise a mis-tapped tick could never
+ * be undone, and an accidental "taken" would silence every reminder for a dose
+ * she has not actually swallowed.
+ *
+ * The service worker's notification buttons deliberately never set it: a
+ * lock-screen reminder can outlive the dose it names by hours.
+ */
+export interface DoseActionOptions {
+  force?: boolean;
+}
+
+export type DoseActionHandler = (
+  dose: ScheduledDose,
+  status: DoseStatus,
+  snoozeMinutes?: number,
+  options?: DoseActionOptions
+) => void;
+
 export interface MedChecklistProps {
   doses: ScheduledDose[];
   medications: Medication[];
@@ -203,7 +227,7 @@ export interface MedChecklistProps {
   /** Dose key currently being written to the server. */
   busyKey: string | null;
   snoozeMinutes: number;
-  onAction: (dose: ScheduledDose, status: DoseStatus, snoozeMinutes?: number) => void;
+  onAction: DoseActionHandler;
 }
 
 export function MedChecklist({
@@ -311,7 +335,7 @@ interface DoseRowProps {
   menuOpen: boolean;
   onToggleMenu: () => void;
   onCloseMenu: () => void;
-  onAction: (dose: ScheduledDose, status: DoseStatus, snoozeMinutes?: number) => void;
+  onAction: DoseActionHandler;
 }
 
 function DoseRow({
@@ -404,11 +428,23 @@ function DoseRow({
               overdue && snoozed && 'text-amber-400'
             )}
           >
-            {taken &&
-              (dose.taken_at
-                ? `Taken ${formatInstantHHMM(dose.taken_at, tzOffsetMinutes)}`
-                : 'Taken')}
-            {skipped && 'Skipped'}
+            {/* Both settled states say how to get back out of them. A tick she
+                did not mean to make is only harmless while it is obvious that
+                it can be taken back. */}
+            {taken && (
+              <>
+                {dose.taken_at
+                  ? `Taken ${formatInstantHHMM(dose.taken_at, tzOffsetMinutes)}`
+                  : 'Taken'}
+                <span className="font-normal text-gray-500"> · tap the tick to undo</span>
+              </>
+            )}
+            {skipped && (
+              <>
+                Skipped
+                <span className="font-normal text-gray-500"> · undo in the menu</span>
+              </>
+            )}
             {upcoming && `Due at ${dose.time}`}
             {overdue &&
               !snoozed &&
@@ -430,10 +466,14 @@ function DoseRow({
             <MoreHorizontal size={16} />
           </button>
 
+          {/* One tap ticks it off, one tap puts it back — no dialog either way.
+              `force` is what makes the second tap work: undoing a mis-tap has to
+              be as easy as making it, or an accidental tick becomes a missed
+              antibiotic with every reminder channel switched off. */}
           <button
             type="button"
             disabled={busy}
-            onClick={() => onAction(dose, taken ? 'pending' : 'taken')}
+            onClick={() => onAction(dose, taken ? 'pending' : 'taken', undefined, { force: true })}
             aria-label={taken ? `Mark ${dose.name} as not taken` : `Mark ${dose.name} as taken`}
             aria-pressed={taken}
             className={cn(
@@ -459,19 +499,28 @@ function DoseRow({
             onClick={onCloseMenu}
           />
           <div className="absolute right-0 top-full z-[50] mt-1 w-48 overflow-hidden rounded-xl border border-white/10 bg-gray-900 shadow-2xl shadow-black/60">
+            {/* Snooze means "remind me later", never "override what I recorded".
+                It writes `pending`, which is not a settled status, so a guarded
+                write already succeeds on a genuinely pending dose — `force` would
+                buy nothing here and would only unlock reverting a dose she has
+                already taken, wiping taken_at and re-alarming her to take it
+                again. Hidden outright on a settled row: there is nothing to
+                remind her about once the dose is recorded. */}
+            {!taken && !skipped && (
+              <MenuItem
+                onClick={() => {
+                  onCloseMenu();
+                  onAction(dose, 'pending', snoozeMinutes);
+                }}
+              >
+                <Clock size={14} className="text-amber-400" />
+                Snooze {snoozeMinutes} min
+              </MenuItem>
+            )}
             <MenuItem
               onClick={() => {
                 onCloseMenu();
-                onAction(dose, 'pending', snoozeMinutes);
-              }}
-            >
-              <Clock size={14} className="text-amber-400" />
-              Snooze {snoozeMinutes} min
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                onCloseMenu();
-                onAction(dose, skipped ? 'pending' : 'skipped');
+                onAction(dose, skipped ? 'pending' : 'skipped', undefined, { force: true });
               }}
             >
               <span className="h-3.5 w-3.5 rounded-full border-2 border-gray-500" />

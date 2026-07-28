@@ -46,8 +46,6 @@ export interface MedSettings {
   repeat_interval_min: number;
   max_repeats: number;
   snooze_min: number;
-  quiet_hours_start: string | null;
-  quiet_hours_end: string | null;
   updated_at: string;
 }
 
@@ -87,16 +85,17 @@ export interface ScheduledDose {
   snoozed_until: string | null;
 }
 
+/**
+ * A dose the dispatcher should remind about right now.
+ *
+ * There is deliberately no "silent" flag. This module only ever reminds about
+ * medicine, so every reminder it emits must be audible: a 22:00 antibiotic dose
+ * is exactly the one that has to wake her. Nothing here may suppress sound based
+ * on the time of day.
+ */
 export interface DueDose extends ScheduledDose {
   user_id: string;
   overdue_minutes: number;
-  /**
-   * True when this reminder is being dispatched during the user's quiet hours.
-   * The dispatcher MUST pass it through to the push payload so the notification
-   * arrives without sound or vibration — a 3am buzz is what quiet hours exist
-   * to prevent. The reminder is still delivered; it just stays silent.
-   */
-  silent: boolean;
 }
 
 // ---------------------------------------------------------------- constants
@@ -311,6 +310,8 @@ export async function initMedsSchema(): Promise<void> {
       repeat_interval_min INTEGER NOT NULL DEFAULT 5,
       max_repeats INTEGER NOT NULL DEFAULT 12,
       snooze_min INTEGER NOT NULL DEFAULT 10,
+      -- Retained, unread and unwritten, only to avoid a destructive migration:
+      -- quiet hours were removed (a medicine reminder must always be audible).
       quiet_hours_start TEXT,
       quiet_hours_end TEXT,
       updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -413,34 +414,6 @@ export function courseEndDate(med: Medication): string | null {
   return med.duration_days == null ? null : addDays(med.start_date, med.duration_days - 1);
 }
 
-/** Minutes since midnight for an "HH:MM" string, or null when unparseable. */
-function parseHHMM(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
-  if (!match) return null;
-  const h = Number(match[1]);
-  const m = Number(match[2]);
-  if (!Number.isFinite(h) || !Number.isFinite(m) || h > 23 || m > 59) return null;
-  return h * 60 + m;
-}
-
-/**
- * Is the instant `atMs` inside the user's quiet hours?
- *
- * Mirrors the in-page alarm's rule (src/hooks/useMedAlarm.ts) so a reminder is
- * never silent in one channel and blaring in the other.
- */
-export function isInQuietHours(settings: MedSettings, atMs: number): boolean {
-  const start = parseHHMM(settings.quiet_hours_start);
-  const end = parseHHMM(settings.quiet_hours_end);
-  if (start === null || end === null || start === end) return false;
-
-  const shifted = new Date(atMs + settings.tz_offset_minutes * 60_000);
-  const minutes = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
-  // A window like 22:00 -> 07:00 wraps around midnight.
-  return start < end ? minutes >= start && minutes < end : minutes >= start || minutes < end;
-}
-
 // ---------------------------------------------------------------- mapping
 
 function parseTimes(raw: unknown): string[] {
@@ -541,8 +514,9 @@ function mapSettings(row: Record<string, unknown>): MedSettings {
     repeat_interval_min: Number(row.repeat_interval_min ?? 5),
     max_repeats: Number(row.max_repeats ?? 12),
     snooze_min: Number(row.snooze_min ?? 10),
-    quiet_hours_start: row.quiet_hours_start ? String(row.quiet_hours_start) : null,
-    quiet_hours_end: row.quiet_hours_end ? String(row.quiet_hours_end) : null,
+    // quiet_hours_start / quiet_hours_end are intentionally not mapped: the
+    // columns may still hold values from before the feature was removed, and
+    // nothing may read them back into a reminder decision.
     updated_at: toISOTimestamp(row.updated_at),
   };
 }
@@ -571,9 +545,14 @@ export async function getSettings(userId: string): Promise<MedSettings> {
   return mapSettings(created.rows[0]);
 }
 
+/**
+ * The only columns a settings PATCH may touch. quiet_hours_start /
+ * quiet_hours_end are deliberately absent — the columns still exist, but no
+ * request can put a value back into them.
+ */
 const SETTINGS_FIELDS = [
   'tz_offset_minutes', 'alarm_enabled', 'alarm_sound', 'alarm_volume',
-  'repeat_interval_min', 'max_repeats', 'snooze_min', 'quiet_hours_start', 'quiet_hours_end',
+  'repeat_interval_min', 'max_repeats', 'snooze_min',
 ] as const;
 
 export async function updateSettings(userId: string, patch: Partial<MedSettings>): Promise<MedSettings> {
@@ -813,28 +792,119 @@ export async function getDayView(
 
 // ---------------------------------------------------------------- dose logging
 
+/**
+ * A dose is "settled" once it has been taken or skipped — the two statuses a
+ * guarded write refuses to overwrite, and the two that stop the dispatcher
+ * reminding.
+ *
+ * Kept in step by hand with the literal list in logDose's ON CONFLICT ... WHERE
+ * below, which cannot be parameterised: the driver only interpolates primitives,
+ * and spelling the statuses out is what makes that guard auditable at a glance.
+ * Change one, change the other.
+ */
+const SETTLED_STATUSES: readonly DoseStatus[] = ['taken', 'skipped'];
+
+export function isSettledStatus(status: string): boolean {
+  return (SETTLED_STATUSES as readonly string[]).includes(status);
+}
+
+export interface LogDoseResult {
+  /**
+   * Whether the caller's request was honoured. False *only* under
+   * `guardSettled`, when the dose was already settled as something else and
+   * nothing was written — the caller should answer 409.
+   */
+  applied: boolean;
+  /**
+   * The dose's status now: the one just written, or — on a refusal — the
+   * settled status that blocked the write, so the caller can name it.
+   */
+  status: DoseStatus;
+}
+
+/**
+ * Record an action against a dose.
+ *
+ * `guardSettled` makes the write refuse to move a dose OUT of a settled status
+ * ('taken' or 'skipped'). It exists because reading the status and then writing
+ * it are two round trips: a service-worker snooze and an in-app tick ~100ms
+ * apart can both read 'pending', and whichever lands last wins — which is how a
+ * stale lock-screen notification could flip a dose she has already swallowed
+ * back to pending and re-alarm her for it. The guard is therefore part of the
+ * UPDATE itself, evaluated by Postgres against the row it is about to write, so
+ * there is no window between the check and the write.
+ *
+ * Explicit in-app actions pass force (guardSettled = false) and are never
+ * blocked: undoing a mis-tap has to keep working.
+ */
 export async function logDose(
   userId: string,
   medicationId: string,
   scheduledAt: string,
   status: DoseStatus,
-  snoozeMinutes?: number
-): Promise<void> {
+  snoozeMinutes?: number,
+  guardSettled = false
+): Promise<LogDoseResult> {
   const at = new Date(scheduledAt).toISOString();
   const takenAt = status === 'taken' ? new Date().toISOString() : null;
   const snoozedUntil = snoozeMinutes
     ? new Date(Date.now() + snoozeMinutes * 60_000).toISOString()
     : null;
 
-  await sql`
-    INSERT INTO medication_doses (medication_id, user_id, scheduled_at, status, taken_at, snoozed_until)
-    VALUES (${medicationId}, ${userId}, ${at}, ${status}, ${takenAt}, ${snoozedUntil})
+  // A snooze restarts the reminder budget. Without this reset the repeats are
+  // still counted against the ORIGINAL dose time, and since the budget is spent
+  // ~55 minutes in (12 repeats x 5 min), every later snooze was a silent no-op:
+  // the UI promised "Reminding you again in 120 minutes" and the dispatcher then
+  // never pushed again. `EXCLUDED.snoozed_until IS NOT NULL` is precisely "this
+  // write is a snooze", so non-snooze writes leave the counters untouched.
+  //
+  // The guard rides on the DO UPDATE's WHERE. Postgres takes a lock on the
+  // conflicting row and re-evaluates that WHERE against the row as it stands
+  // *after* any concurrent write commits, which is what closes the race: a
+  // snooze that read 'pending' a moment ago still sees 'taken' here and refuses.
+  // A refused statement updates nothing and RETURNING yields no row.
+  const written = await sql`
+    INSERT INTO medication_doses (
+      medication_id, user_id, scheduled_at, status, taken_at, snoozed_until,
+      notified_count, last_notified_at
+    )
+    VALUES (
+      ${medicationId}, ${userId}, ${at}, ${status}, ${takenAt}, ${snoozedUntil},
+      0, NULL
+    )
     ON CONFLICT (medication_id, scheduled_at) DO UPDATE
       SET status = EXCLUDED.status,
           taken_at = EXCLUDED.taken_at,
           snoozed_until = EXCLUDED.snoozed_until,
+          notified_count = CASE WHEN EXCLUDED.snoozed_until IS NOT NULL
+                                THEN 0 ELSE medication_doses.notified_count END,
+          last_notified_at = CASE WHEN EXCLUDED.snoozed_until IS NOT NULL
+                                  THEN NULL ELSE medication_doses.last_notified_at END,
           updated_at = NOW()
+      WHERE NOT ${guardSettled}::boolean
+         OR medication_doses.status NOT IN ('taken', 'skipped')
+    RETURNING status
   `;
+  if (written.rows.length > 0) {
+    return { applied: true, status: String(written.rows[0].status) as DoseStatus };
+  }
+
+  // Only a guarded write can land here, and only against an already-settled row.
+  // Read it back rather than assuming: this has to run AFTER the statement above
+  // so it observes whatever concurrent write actually won, not the snapshot this
+  // request started from.
+  const current = await sql`
+    SELECT status FROM medication_doses
+    WHERE medication_id = ${medicationId} AND scheduled_at = ${at}
+    LIMIT 1
+  `;
+  if (current.rows.length === 0) return { applied: false, status };
+  const settled = String(current.rows[0].status) as DoseStatus;
+
+  // Re-asserting the status a dose already has changed nothing, so it is a
+  // success rather than a 409 — and because the write was skipped, the original
+  // taken_at survives instead of being bumped to now.
+  return { applied: settled === status, status: settled };
 }
 
 /** Adherence over the last N days: how many expected doses were actually ticked. */
@@ -1010,13 +1080,11 @@ export async function getDueDosesForDispatch(
       logMap.set(`${String(l.medication_id)}|${new Date(String(l.scheduled_at)).toISOString()}`, l);
     }
 
-    const silent = isInQuietHours(settings, now);
-
     const due: DueDose[] = [];
     for (const c of expected) {
       const log = logMap.get(c.key);
       const status = log ? String(log.status) : 'pending';
-      if (status === 'taken' || status === 'skipped') continue;
+      if (isSettledStatus(status)) continue;
 
       const scheduledMs = new Date(c.scheduled_at).getTime();
       const snoozedUntilMs = log?.snoozed_until ? new Date(String(log.snoozed_until)).getTime() : 0;
@@ -1043,7 +1111,6 @@ export async function getDueDosesForDispatch(
         // Measured from the scheduled time, not the snooze — this is how late
         // the medicine itself is, which is what the notification wording uses.
         overdue_minutes: Math.round((now - scheduledMs) / 60_000),
-        silent,
       });
     }
     if (due.length > 0) result.set(userId, due);

@@ -44,6 +44,7 @@ import {
   formatWeekdayShort,
   medColor,
   safeCourseEndDate,
+  type DoseActionOptions,
 } from '@/components/meds/MedChecklist';
 import { DoseRing } from '@/components/meds/DoseRing';
 import { MedicineEditor } from '@/components/meds/MedicineEditor';
@@ -300,8 +301,31 @@ export default function MedsPage() {
   const skippedToday = doses.filter((d) => d.status === 'skipped').length;
 
   // ------------------------------------------------------------------ actions
+  /**
+   * Write one dose action.
+   *
+   * `options.force` is how an explicit tap in the app says "yes, I really mean
+   * to change a dose I already settled". Without it the API refuses to move a
+   * dose out of 'taken' or 'skipped' and writes nothing (409) — which is right
+   * for a notification button that may have been sitting on the lock screen for
+   * hours, and wrong for her thumb on the tick circle. Every call from this
+   * screen and from the alarm overlay sets it; the service worker never does.
+   * Undoing a mis-tap has to work first time, or an accidental tick silences
+   * every reminder for a dose she has not taken.
+   *
+   * The options type is the checklist's on purpose: this one function is what
+   * both the checklist and useMedAlarm call, so if either contract moves, this
+   * stops compiling rather than quietly dropping the flag.
+   */
   const handleDoseAction = useCallback(
-    async (dose: ScheduledDose, status: DoseStatus, snoozeMin?: number) => {
+    async (
+      dose: ScheduledDose,
+      status: DoseStatus,
+      snoozeMin?: number,
+      options?: DoseActionOptions
+    ) => {
+      const force = options?.force === true;
+      const previousStatus = dose.status;
       setBusyKey(dose.key);
       setData((prev) =>
         prev
@@ -332,12 +356,21 @@ export default function MedsPage() {
             scheduled_at: dose.scheduled_at,
             status,
             ...(snoozeMin ? { snooze_minutes: snoozeMin } : {}),
+            ...(force ? { force: true } : {}),
           }),
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(String(json?.error ?? 'Could not save that dose'));
         if (snoozeMin) {
           toastRef.current.info('Snoozed', `Reminding you again in ${snoozeMin} minutes.`);
+        } else if (status === 'pending' && previousStatus !== 'pending') {
+          // Say out loud what an undo did. She is most likely here because the
+          // tick was an accident, and "it is back on your list" is the only
+          // thing that tells her the reminders are on again.
+          toastRef.current.info(
+            previousStatus === 'taken' ? 'Un-ticked' : 'Un-skipped',
+            `${dose.name} is back on your list for ${dose.time}.`
+          );
         }
       } catch (e) {
         toastRef.current.error(
@@ -381,11 +414,22 @@ export default function MedsPage() {
   const alarmsNeedSetup =
     alarmState.supported && (alarmState.permission !== 'granted' || !alarmState.audioUnlocked);
 
+  /**
+   * The full-screen alarm's buttons. She is looking straight at the dose, so
+   * Taken and Skip are explicit overrides and carry `force`.
+   *
+   * Snooze deliberately does not. It only ever means "remind me later", and the
+   * overlay can outlive the truth: the page does not poll the day view, so a
+   * dose settled on another device leaves this overlay up on stale data. Without
+   * `force` a snooze against an already-settled dose is refused by the API
+   * instead of reverting it and re-alarming her for medicine already taken.
+   */
   const handleAlarmAction = useCallback(
     async (dose: ScheduledDose, status: DoseStatus, snoozeMin?: number) => {
       stopRinging();
       dismissActive();
-      await handleDoseAction(dose, status, snoozeMin);
+      const isSnooze = snoozeMin != null;
+      await handleDoseAction(dose, status, snoozeMin, isSnooze ? undefined : { force: true });
     },
     [handleDoseAction, stopRinging, dismissActive]
   );

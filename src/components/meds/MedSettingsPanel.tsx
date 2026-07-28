@@ -146,7 +146,6 @@ export function MedSettingsPanel({
     );
   }
 
-  const quietHoursOn = Boolean(draft.quiet_hours_start && draft.quiet_hours_end);
   const alarmsReady = permission === 'granted' && audioUnlocked;
 
   return (
@@ -260,6 +259,15 @@ export function MedSettingsPanel({
           onChange={(v) => update({ snooze_min: v })}
         />
 
+        {/* There is no quiet-hours setting any more, and that is deliberate:
+            this screen only ever reminds about medicine, so a 22:00 antibiotic
+            is exactly the dose that has to wake her. Saying so here stops her
+            hunting for a switch that is never coming back. */}
+        <p className="pt-3 text-[11px] leading-relaxed text-gray-500">
+          Reminders always make a sound, at any hour of the night. Use Volume above if you need
+          them quieter — a dose you sleep through is a dose you miss.
+        </p>
+
         <div className="flex flex-wrap gap-2 pt-3">
           <Button variant="outline" onClick={onTestAlarm}>
             <BellRing size={14} />
@@ -270,35 +278,6 @@ export function MedSettingsPanel({
             Send test notification
           </Button>
         </div>
-      </Card>
-
-      <Card title="Quiet hours" saving={saving}>
-        <ToggleRow
-          label="Silence alarms overnight"
-          hint="Reminders still appear — they just will not make a sound."
-          checked={quietHoursOn}
-          onChange={(v) =>
-            update(
-              v
-                ? { quiet_hours_start: '22:00', quiet_hours_end: '07:00' }
-                : { quiet_hours_start: null, quiet_hours_end: null }
-            )
-          }
-        />
-        {quietHoursOn && (
-          <div className="grid grid-cols-2 gap-3 pt-3">
-            <TimeField
-              label="From"
-              value={draft.quiet_hours_start ?? '22:00'}
-              onChange={(v) => update({ quiet_hours_start: v })}
-            />
-            <TimeField
-              label="Until"
-              value={draft.quiet_hours_end ?? '07:00'}
-              onChange={(v) => update({ quiet_hours_end: v })}
-            />
-          </div>
-        )}
       </Card>
 
       <Card title="Timezone" saving={saving}>
@@ -443,33 +422,6 @@ function Stepper({
           <Plus size={14} />
         </button>
       </div>
-    </div>
-  );
-}
-
-function TimeField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="mb-1.5 block text-xs font-medium text-gray-400">{label}</label>
-      <input
-        type="time"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{ fontSize: '16px' }}
-        className={cn(
-          'w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-gray-100',
-          'focus:border-violet-500/50 focus:outline-none focus:ring-2 focus:ring-violet-500/50',
-          '[color-scheme:dark]'
-        )}
-      />
     </div>
   );
 }

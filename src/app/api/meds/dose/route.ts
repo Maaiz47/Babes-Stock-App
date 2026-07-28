@@ -9,6 +9,31 @@ export const dynamic = 'force-dynamic';
 const STATUSES: DoseStatus[] = ['taken', 'skipped', 'pending'];
 
 /**
+ * Statuses that represent a decision she already made about this dose. Both are
+ * settled: 'skipped' is as deliberate an act as 'taken' ("I could not eat, so I
+ * am not taking this one"), and a stale notification must not be able to
+ * rewrite either of them hours later.
+ */
+const SETTLED: DoseStatus[] = ['taken', 'skipped'];
+
+function isSettled(status: DoseStatus | null): status is DoseStatus {
+  return status !== null && SETTLED.includes(status);
+}
+
+/**
+ * The single 409 shape for "this dose is already settled as something else".
+ * Both the friendly pre-read and the authoritative guarded write answer with
+ * it, so a caller cannot tell the two apart and the service worker's
+ * `res.status === 409 -> conflict` branch behaves identically either way.
+ */
+function settledConflict(current: DoseStatus): NextResponse {
+  return NextResponse.json(
+    { error: `Dose already recorded as ${current}`, status: current },
+    { status: 409 }
+  );
+}
+
+/**
  * Reads the row a write is about to overwrite. Scoped to the session user so a
  * caller can never probe another account's history. Returns null when the dose
  * has never been actioned.
@@ -95,21 +120,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Medicine not found' }, { status: 404 });
     }
 
-    // A stale notification must not be able to erase a taken record. Without
-    // this, tapping Snooze at 09:00 on the still-open 08:00 alert would flip a
+    // A stale notification must not be able to rewrite a decision she already
+    // made. Tapping Snooze at 09:00 on the still-open 08:00 alert would flip a
     // dose she already took back to pending, blank taken_at, and re-alarm her
-    // for a dose that is already in her — a double-dose risk.
-    if (!force && (status === 'pending' || status === 'skipped')) {
+    // for a dose that is already in her — a double-dose risk. The same applies
+    // to a skip: she taps "Skip this dose" at 20:03 because she could not eat,
+    // then clears her lock screen at 22:10 and hits Taken on the still-open
+    // 20:00 notification; without this the record reads taken at 22:10 for a
+    // dose she deliberately skipped, and adherence is wrong in the flattering
+    // direction.
+    //
+    // Only a move to a *different* status is refused — re-sending the status a
+    // dose already has is a harmless no-op and stays a success, so a duplicate
+    // tap does not surface an error.
+    if (!force) {
       const existing = await currentStatus(session.userId, medicationId, scheduledAt);
-      if (existing === 'taken') {
-        return NextResponse.json(
-          { error: 'Dose already recorded as taken', status: 'taken' },
-          { status: 409 }
-        );
+      if (isSettled(existing) && existing !== status) {
+        return settledConflict(existing);
       }
     }
 
-    await logDose(session.userId, medicationId, scheduledAt, status, snoozeMinutes);
+    // The pre-read above only exists to name the blocking status nicely. It is a
+    // separate round trip, so it cannot be the guarantee: an in-app tick and a
+    // service-worker snooze arriving ~100ms apart both read 'pending' and
+    // whichever lands last wins. `guardSettled` moves the same check inside the
+    // UPDATE, where Postgres evaluates it against the row it is about to write,
+    // so a refused write touches nothing at all.
+    //
+    // guardSettled is the inverse of force: an explicit in-app action is never
+    // blocked, because undoing a mis-tap has to keep working.
+    const result = await logDose(
+      session.userId,
+      medicationId,
+      scheduledAt,
+      status,
+      snoozeMinutes,
+      !force
+    );
+    if (!result.applied) {
+      return settledConflict(result.status);
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

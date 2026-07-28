@@ -38,15 +38,6 @@ function foodHint(food: FoodInstruction): string {
   return ` (${FOOD_LABELS[food].toLowerCase()})`;
 }
 
-/**
- * True only when every dose in the batch is inside her quiet hours. The service
- * worker uses this to drop the vibration so a 3am reminder does not jolt her
- * awake — the notification itself is still delivered.
- */
-function isSilentBatch(doses: DueDose[]): boolean {
-  return doses.length > 0 && doses.every(d => d.silent);
-}
-
 /** One notification per user, never one per pill. */
 function buildNotification(doses: DueDose[]): { title: string; body: string } {
   const overdue = doses.some(d => d.overdue_minutes >= OVERDUE_THRESHOLD_MIN);
@@ -87,10 +78,19 @@ async function dispatch(req: NextRequest) {
       try {
         const { title, body } = buildNotification(doses);
 
-        // The payload is typed as MedPushPayload plus the optional quiet-hours
-        // flag, so `silent` survives the JSON.stringify in sendPushToUser
-        // without widening the shared payload interface.
-        const payload: MedPushPayload & { silent?: boolean } = {
+        // Reminders are always audible — there is deliberately no `silent` flag
+        // on this payload any more. A medication reminder that arrives without
+        // sound is a missed dose, so no time-of-day rule may suppress it.
+        //
+        // `doseKeys` is additive on top of MedPushPayload so it survives the
+        // JSON.stringify in sendPushToUser without widening the shared payload
+        // interface. A grouped reminder sets medicationId to null, which left
+        // the client unable to tell which doses the "3 medicines due" entry
+        // stood for — so it could never close it, and the notification outlived
+        // every dose being ticked off. The keys are exactly ScheduledDose.key,
+        // so the client can match them against its own schedule and dismiss the
+        // notification once all of them are settled.
+        const payload: MedPushPayload & { doseKeys: string[] } = {
           title,
           body,
           // A stable tag lets each repeat replace the last one instead of
@@ -99,13 +99,9 @@ async function dispatch(req: NextRequest) {
           medicationId: doses.length === 1 ? doses[0].medication_id : null,
           scheduledAt: doses[0].scheduled_at,
           doseCount: doses.length,
+          doseKeys: doses.map(d => d.key),
           url: '/meds',
         };
-
-        // Only a batch where *every* dose falls inside her quiet hours is sent
-        // silently. If even one dose is outside them the notification stays
-        // loud — a mixed batch is not a quiet-hours batch.
-        if (isSilentBatch(doses)) payload.silent = true;
 
         const delivered = await sendPushToUser(userId, payload);
 

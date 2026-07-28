@@ -74,7 +74,10 @@ function parsePatch(raw: unknown): Parsed {
         return { ok: false, error: `Invalid time in times_of_day: ${String(t)} (expected HH:MM)` };
       }
     }
-    patch.times_of_day = (body.times_of_day as string[]).slice();
+    // De-duplicated for the same reason as the create route: a repeated time
+    // produces two expected doses sharing one key, which permanently caps
+    // adherence below 100%.
+    patch.times_of_day = [...new Set(body.times_of_day as string[])];
   }
 
   if ('food_instruction' in body) {

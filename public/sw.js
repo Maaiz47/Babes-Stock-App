@@ -41,34 +41,40 @@ self.addEventListener('push', event => {
   // `renotify` is only legal alongside a tag, so the tag always has a fallback.
   const tag = typeof data.tag === 'string' && data.tag ? data.tag : 'med-reminder';
 
-  // Quiet hours. The dispatcher sets this when every dose in the batch falls
-  // inside her quiet hours: the reminder is still delivered and still sits on
-  // the lock screen, it just must not make a sound or buzz the phone at 3am.
-  // Anything other than a literal `true` rings — a missing or malformed flag
-  // must never be the reason a reminder went unheard.
-  const silent = data.silent === true;
-
+  // Every reminder this worker shows is audible, full stop. There is no
+  // quiet-hours path and no `silent` flag any more: this worker only ever
+  // reminds about medicine, so a 22:00 antibiotic is precisely the dose that has
+  // to wake her. A payload from an older deploy may still carry `silent: true` —
+  // it is ignored rather than honoured, because a reminder she cannot hear is a
+  // missed dose.
   const options = {
     body,
     tag,
     renotify: true,
     requireInteraction: true,
-    silent,
+    silent: false,
+    vibrate: VIBRATE,
     badge: BADGE,
     icon: ICON,
     data: {
       url: typeof data.url === 'string' && data.url ? data.url : APP_URL,
       medicationId: data.medicationId ?? null,
       scheduledAt: data.scheduledAt ?? null,
+      // Every dose this reminder stands for, as `${medication_id}|${scheduled_at}`.
+      // A grouped "3 medicines due" has no single medicationId, so without these
+      // an open tab could not tell what the notification was about and could
+      // never close it — it outlived every dose in it being ticked off, with its
+      // buttons still live. Kept as an array for the single-dose case too, so
+      // the page has one shape to match against.
+      doseKeys: Array.isArray(data.doseKeys)
+        ? data.doseKeys.filter(key => typeof key === 'string' && key)
+        : [],
     },
     actions: [
       { action: 'taken', title: 'Taken' },
       { action: 'snooze', title: 'Snooze 10m' },
     ],
   };
-  // A vibration pattern alongside `silent: true` is a TypeError in Chrome and
-  // would throw the whole reminder away, so the two are never both present.
-  if (!silent) options.vibrate = VIBRATE;
 
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -114,11 +120,11 @@ async function handleClick(action, data) {
     }
 
     if (result === 'conflict') {
-      // The dose is already recorded as taken and the server refused to
-      // overwrite it — this tap came from a notification that has been sitting
-      // there since before she took it. Nothing to do and nothing to say: the
-      // write was correctly rejected, the notification is already closed above,
-      // and dragging her into the app to explain would only invite her to
+      // The dose is already settled — taken or skipped — and the server refused
+      // to overwrite it. This tap came from a notification that has been sitting
+      // there since before she dealt with it. Nothing to do and nothing to say:
+      // the write was correctly rejected, the notification is already closed
+      // above, and dragging her into the app to explain would only invite her to
       // "fix" a dose that is not broken.
       return;
     }
@@ -131,13 +137,16 @@ async function handleClick(action, data) {
 
 /**
  * POST the dose action. Returns 'ok', 'conflict' (the server refused because the
- * dose is already recorded as taken), or 'failed'.
+ * dose is already settled as taken or skipped), or 'failed'.
  *
- * `force` is deliberately never sent. A notification with requireInteraction can
- * sit on the lock screen for hours after the dose was ticked off in the app, and
+ * `force` is deliberately never sent from here, and this is the one place in the
+ * app that must not send it. A notification with requireInteraction can sit on
+ * the lock screen for hours after the dose was dealt with in the app, and
  * forcing the write would flip a taken dose back to pending, blank its taken_at
- * and start alarming for medicine that is already in her. The API answers 409 in
- * exactly that case and the caller above treats it as a no-op.
+ * and start alarming for medicine that is already in her — or overwrite a
+ * deliberate skip with a "taken" she never meant. The API answers 409 in exactly
+ * those cases and the caller above treats it as a no-op. Explicit taps inside
+ * the app do send it, which is what makes undoing a mis-tap possible there.
  */
 async function logDose(medicationId, scheduledAt, status, snoozeMinutes) {
   const body = { medication_id: medicationId, scheduled_at: scheduledAt, status };

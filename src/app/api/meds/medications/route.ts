@@ -69,7 +69,11 @@ function parseCreate(raw: unknown, today: string, nextSortOrder: number): Parsed
         return { ok: false, error: `Invalid time in times_of_day: ${String(t)} (expected HH:MM)` };
       }
     }
-    times_of_day = (body.times_of_day as string[]).slice();
+    // De-duplicate: a dose is keyed by medication + scheduled instant, so a
+    // repeated time yields two expected doses sharing one key. Adherence would
+    // count it twice as expected but could only ever record one as taken,
+    // capping her at less than 100% permanently.
+    times_of_day = [...new Set(body.times_of_day as string[])];
   }
 
   const food_instruction = (body.food_instruction ?? 'any') as FoodInstruction;

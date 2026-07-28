@@ -5,8 +5,6 @@ import { updateSettings, type MedSettings } from '@/lib/meds';
 
 export const dynamic = 'force-dynamic';
 
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-
 type Parsed = { ok: true; value: Partial<MedSettings> } | { ok: false; error: string };
 
 function parseSettingsPatch(raw: unknown): Parsed {
@@ -15,9 +13,14 @@ function parseSettingsPatch(raw: unknown): Parsed {
   }
   const body = raw as Record<string, unknown>;
 
+  // Quiet hours are gone on purpose: a medication reminder must always be
+  // audible, so there is no longer any setting that can mute one by time of day.
+  // The columns still exist in the table (initMedsSchema runs on every boot and
+  // dropping them is riskier than leaving them unused), but nothing may write
+  // them — an unknown-field rejection here is what keeps them dead.
   const allowed = new Set([
     'tz_offset_minutes', 'alarm_enabled', 'alarm_sound', 'alarm_volume',
-    'repeat_interval_min', 'max_repeats', 'snooze_min', 'quiet_hours_start', 'quiet_hours_end',
+    'repeat_interval_min', 'max_repeats', 'snooze_min',
   ]);
   for (const key of Object.keys(body)) {
     if (!allowed.has(key)) return { ok: false, error: `Unknown field: ${key}` };
@@ -79,19 +82,6 @@ function parseSettingsPatch(raw: unknown): Parsed {
       return { ok: false, error: 'snooze_min must be an integer between 1 and 240' };
     }
     patch.snooze_min = n;
-  }
-
-  for (const key of ['quiet_hours_start', 'quiet_hours_end'] as const) {
-    if (key in body) {
-      const value = body[key];
-      if (value === null || value === '') {
-        patch[key] = null;
-      } else if (typeof value === 'string' && TIME_RE.test(value)) {
-        patch[key] = value;
-      } else {
-        return { ok: false, error: `${key} must be null or an HH:MM string` };
-      }
-    }
   }
 
   return { ok: true, value: patch };
