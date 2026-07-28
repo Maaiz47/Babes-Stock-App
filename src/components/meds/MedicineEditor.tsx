@@ -61,6 +61,7 @@ interface FormState {
   start_date: string;
   duration_days: string;
   min_gap_minutes: string;
+  purpose: string;
   food_instruction: FoodInstruction;
   notes: string;
   color: string;
@@ -77,6 +78,7 @@ function initialState(medication: Medication | null, defaultStartDate: string): 
       frequency_code: medication.frequency_code,
       times_of_day: [...medication.times_of_day].sort(),
       start_date: medication.start_date,
+      purpose: medication.purpose ?? '',
       duration_days: medication.duration_days == null ? '' : String(medication.duration_days),
       min_gap_minutes:
         medication.min_gap_minutes == null ? '' : String(medication.min_gap_minutes),
@@ -96,6 +98,7 @@ function initialState(medication: Medication | null, defaultStartDate: string): 
     start_date: defaultStartDate,
     duration_days: '',
     min_gap_minutes: '',
+    purpose: '',
     food_instruction: 'any',
     notes: '',
     color: 'violet',
@@ -252,6 +255,7 @@ export function MedicineEditor({
     const payload: MedicationInput = {
       name,
       strength: form.strength.trim() || null,
+      purpose: form.purpose.trim() || null,
       form: form.form,
       dose_label: doseLabel,
       frequency_code: form.frequency_code,
@@ -338,6 +342,15 @@ export function MedicineEditor({
               value={form.dose_label}
               onChange={(e) => patch('dose_label', e.target.value)}
               placeholder="1 tablet"
+              style={{ fontSize: '16px' }}
+            />
+          </Field>
+
+          <Field label="What it's for" className="col-span-2">
+            <Input
+              value={form.purpose}
+              onChange={(e) => patch('purpose', e.target.value)}
+              placeholder="e.g. Antibiotic — covers a different group of bacteria"
               style={{ fontSize: '16px' }}
             />
           </Field>

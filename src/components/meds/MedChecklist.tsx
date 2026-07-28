@@ -267,6 +267,30 @@ export function MedChecklist({
 
   const medsById = new Map(medications.map((m) => [m.id, m]));
 
+  /**
+   * "Dose 2 of 3" and "1/3 today", per medicine, for this day.
+   *
+   * Derived from the doses actually on screen rather than from
+   * times_of_day.length, so a medicine whose course ends mid-day — or whose
+   * times were edited — still counts what is really scheduled.
+   */
+  const dayPosition = new Map<string, { index: number; total: number; taken: number }>();
+  {
+    const byMed = new Map<string, ScheduledDose[]>();
+    for (const d of doses) {
+      const list = byMed.get(d.medication_id);
+      if (list) list.push(d);
+      else byMed.set(d.medication_id, [d]);
+    }
+    for (const list of byMed.values()) {
+      const ordered = [...list].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+      const taken = ordered.filter((d) => d.status === 'taken').length;
+      ordered.forEach((d, i) =>
+        dayPosition.set(d.key, { index: i + 1, total: ordered.length, taken })
+      );
+    }
+  }
+
   /** Next scheduled dose of the same medicine, for the sheet's shift preview. */
   const nextDoseAfter = (dose: ScheduledDose): string | null => {
     const later = doses
@@ -344,6 +368,8 @@ export function MedChecklist({
                           onCloseMenu={() => setOpenMenu(null)}
                           onAction={onAction}
                           onRequestConfirm={setConfirming}
+                          purpose={medsById.get(dose.medication_id)?.purpose ?? null}
+                          position={dayPosition.get(dose.key) ?? null}
                         />
                       ))}
                   </div>
@@ -367,6 +393,7 @@ export function MedChecklist({
             return med ? effectiveMinGapMinutes(med) : 0;
           })()}
           saving={busyKey === confirming.key}
+          initialTakenAt={confirming.status === 'taken' ? confirming.taken_at : null}
           onCancel={() => setConfirming(null)}
           onConfirm={(takenAtISO) => {
             onAction(confirming, 'taken', undefined, { force: true, takenAt: takenAtISO });
@@ -391,8 +418,12 @@ interface DoseRowProps {
   onToggleMenu: () => void;
   onCloseMenu: () => void;
   onAction: DoseActionHandler;
-  /** Ticking a dose ON asks her to confirm the time first. */
+  /** Ticking a dose ON — or correcting a recorded time — opens the sheet. */
   onRequestConfirm: (dose: ScheduledDose) => void;
+  /** Plain-language note on what this medicine is for. */
+  purpose: string | null;
+  /** Which dose of the day this is, and how many are already ticked off. */
+  position: { index: number; total: number; taken: number } | null;
 }
 
 function DoseRow({
@@ -407,6 +438,8 @@ function DoseRow({
   onCloseMenu,
   onAction,
   onRequestConfirm,
+  purpose,
+  position,
 }: DoseRowProps) {
   const color = medColor(dose.color);
   const scheduledMs = Date.parse(dose.scheduled_at);
@@ -470,8 +503,19 @@ function DoseRow({
             )}
           </div>
 
+          {purpose && (
+            <p className="mt-0.5 text-[11px] leading-snug text-gray-500">{purpose}</p>
+          )}
+
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <Chip className="border-white/10 bg-white/5 text-gray-300">{dose.dose_label}</Chip>
+            {position && position.total > 1 && (
+              <Chip className="border-white/10 bg-white/5 text-gray-400">
+                <span className="tabular-nums">
+                  Dose {position.index} of {position.total}
+                </span>
+              </Chip>
+            )}
             <Chip className={FOOD_CHIP[dose.food_instruction]}>
               <Utensils size={10} />
               {FOOD_LABELS[dose.food_instruction]}
@@ -514,10 +558,24 @@ function DoseRow({
                 it can be taken back. */}
             {taken && (
               <>
-                {dose.taken_at
-                  ? `Taken ${formatInstantHHMM(dose.taken_at, tzOffsetMinutes)}`
-                  : 'Taken'}
-                <span className="font-normal text-gray-500"> · tap the tick to undo</span>
+                {/* The recorded time is tappable because it is routinely wrong:
+                    a morning dose ticked off at lunchtime carries lunchtime, and
+                    that value is what the next dose gets spaced from. */}
+                {dose.taken_at ? (
+                  <button
+                    type="button"
+                    onClick={() => onRequestConfirm(dose)}
+                    className="underline decoration-emerald-400/40 decoration-dotted underline-offset-2 transition-colors hover:text-emerald-300"
+                  >
+                    Taken {formatInstantHHMM(dose.taken_at, tzOffsetMinutes)}
+                  </button>
+                ) : (
+                  'Taken'
+                )}
+                <span className="font-normal text-gray-500">
+                  {' '}
+                  · tap the time to correct it, the tick to undo
+                </span>
               </>
             )}
             {skipped && (
@@ -600,6 +658,17 @@ function DoseRow({
               >
                 <Clock size={14} className="text-amber-400" />
                 Snooze {snoozeMinutes} min
+              </MenuItem>
+            )}
+            {taken && (
+              <MenuItem
+                onClick={() => {
+                  onCloseMenu();
+                  onRequestConfirm(dose);
+                }}
+              >
+                <Clock size={14} className="text-emerald-400" />
+                Change time taken
               </MenuItem>
             )}
             <MenuItem

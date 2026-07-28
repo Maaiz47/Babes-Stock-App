@@ -41,6 +41,12 @@ export interface Medication {
    * would not be.
    */
   min_gap_minutes: number | null;
+  /**
+   * Plain-language note on what this medicine is for, in her words rather than
+   * a datasheet's. Describes the drug's job ("antibiotic", "reduces stomach
+   * acid") — never a diagnosis, which has no business being in this repo.
+   */
+  purpose: string | null;
   food_instruction: FoodInstruction;
   notes: string | null;
   color: string;              // tailwind-ish token used by the UI
@@ -56,8 +62,8 @@ export interface Medication {
  * almost every medicine, so callers should have to opt IN to overriding it.
  */
 export type MedicationInput =
-  Omit<Medication, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'min_gap_minutes'>
-  & { min_gap_minutes?: number | null };
+  Omit<Medication, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'min_gap_minutes' | 'purpose'>
+  & { min_gap_minutes?: number | null; purpose?: string | null };
 
 export interface MedSettings {
   user_id: string;
@@ -172,6 +178,7 @@ export const FOOD_LABELS: Record<FoodInstruction, string> = {
 export const PRESCRIPTION_DEFAULTS: Omit<MedicationInput, 'start_date'>[] = [
   {
     name: 'Pantoprazole',
+    purpose: 'Reduces stomach acid — protects your stomach from the other tablets.',
     strength: '40 mg',
     form: 'tablet',
     dose_label: '1 tablet',
@@ -186,6 +193,7 @@ export const PRESCRIPTION_DEFAULTS: Omit<MedicationInput, 'start_date'>[] = [
   },
   {
     name: 'Trypsin + Chymotrypsin',
+    purpose: 'Enzyme tablet — helps bring down swelling and bruising.',
     strength: '100,000 units',
     form: 'tablet',
     dose_label: '1 tablet',
@@ -200,6 +208,7 @@ export const PRESCRIPTION_DEFAULTS: Omit<MedicationInput, 'start_date'>[] = [
   },
   {
     name: 'Cefixime + Lactobacillus',
+    purpose: 'Antibiotic, with a probiotic to look after your gut while you take it.',
     strength: '200 mg + 60 million spores',
     form: 'tablet',
     dose_label: '1 tablet',
@@ -214,6 +223,7 @@ export const PRESCRIPTION_DEFAULTS: Omit<MedicationInput, 'start_date'>[] = [
   },
   {
     name: 'Metronidazole',
+    purpose: 'A second antibiotic — covers a different group of bacteria.',
     strength: '400 mg',
     form: 'tablet',
     dose_label: '1 tablet',
@@ -228,6 +238,7 @@ export const PRESCRIPTION_DEFAULTS: Omit<MedicationInput, 'start_date'>[] = [
   },
   {
     name: 'Diclofenac Sodium',
+    purpose: 'Anti-inflammatory painkiller — for pain and swelling.',
     strength: '50 mg',
     form: 'tablet',
     dose_label: '1 tablet',
@@ -242,6 +253,7 @@ export const PRESCRIPTION_DEFAULTS: Omit<MedicationInput, 'start_date'>[] = [
   },
   {
     name: 'Vitamin C (Ascorbic Acid)',
+    purpose: 'Vitamin supplement — supports healing.',
     strength: '500 mg',
     form: 'chewable tablet',
     dose_label: '1 tablet',
@@ -256,6 +268,7 @@ export const PRESCRIPTION_DEFAULTS: Omit<MedicationInput, 'start_date'>[] = [
   },
   {
     name: 'Mupirocin Ointment',
+    purpose: 'Antibiotic ointment — applied to the skin, not swallowed.',
     strength: '2%',
     form: 'ointment',
     dose_label: 'Apply locally',
@@ -321,6 +334,19 @@ export async function initMedsSchema(): Promise<void> {
   // Added after the table shipped. Nullable on purpose: null means "derive the
   // gap from this medicine's own times", so existing rows keep working untouched.
   await sql`ALTER TABLE medications ADD COLUMN IF NOT EXISTS min_gap_minutes INTEGER`;
+  await sql`ALTER TABLE medications ADD COLUMN IF NOT EXISTS purpose TEXT`;
+
+  // Rows seeded before `purpose` existed would otherwise show nothing until
+  // seven descriptions were typed by hand. Only ever fills a NULL, and only for
+  // a name it recognises, so an edited or renamed medicine is left alone. Safe
+  // to re-run — initMedsSchema executes on every boot.
+  for (const seed of PRESCRIPTION_DEFAULTS) {
+    if (!seed.purpose) continue;
+    await sql`
+      UPDATE medications SET purpose = ${seed.purpose}
+      WHERE purpose IS NULL AND name = ${seed.name}
+    `;
+  }
 
   await sql`
     CREATE TABLE IF NOT EXISTS medication_doses (
@@ -535,6 +561,7 @@ function mapMedication(row: Record<string, unknown>): Medication {
     start_date: toISODate(row.start_date),
     duration_days: row.duration_days != null ? Number(row.duration_days) : null,
     min_gap_minutes: row.min_gap_minutes != null ? Number(row.min_gap_minutes) : null,
+    purpose: row.purpose ? String(row.purpose) : null,
     food_instruction: String(row.food_instruction) as FoodInstruction,
     notes: row.notes ? String(row.notes) : null,
     color: String(row.color),
@@ -633,8 +660,8 @@ export async function updateSettings(userId: string, patch: Partial<MedSettings>
  */
 const MED_COLUMNS = `
   id, user_id, name, strength, form, dose_label, frequency_code, times_of_day,
-  start_date::text AS start_date, duration_days, min_gap_minutes, food_instruction,
-  notes, color, active, sort_order, created_at, updated_at
+  start_date::text AS start_date, duration_days, min_gap_minutes, purpose,
+  food_instruction, notes, color, active, sort_order, created_at, updated_at
 `;
 
 export async function getMedications(userId: string): Promise<Medication[]> {
@@ -650,15 +677,15 @@ export async function createMedication(userId: string, input: MedicationInput): 
   const result = await sql.query(
     `INSERT INTO medications (
        user_id, name, strength, form, dose_label, frequency_code, times_of_day,
-       start_date, duration_days, min_gap_minutes, food_instruction, notes, color,
-       active, sort_order
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       start_date, duration_days, min_gap_minutes, purpose, food_instruction, notes,
+       color, active, sort_order
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      RETURNING ${MED_COLUMNS}`,
     [
       userId, input.name, input.strength ?? null, input.form, input.dose_label,
       input.frequency_code, JSON.stringify(input.times_of_day), input.start_date,
-      input.duration_days ?? null, input.min_gap_minutes ?? null, input.food_instruction,
-      input.notes ?? null, input.color, input.active, input.sort_order,
+      input.duration_days ?? null, input.min_gap_minutes ?? null, input.purpose ?? null,
+      input.food_instruction, input.notes ?? null, input.color, input.active, input.sort_order,
     ]
   );
   return mapMedication(result.rows[0]);
@@ -666,8 +693,8 @@ export async function createMedication(userId: string, input: MedicationInput): 
 
 const MED_FIELDS = [
   'name', 'strength', 'form', 'dose_label', 'frequency_code', 'times_of_day',
-  'start_date', 'duration_days', 'min_gap_minutes', 'food_instruction', 'notes', 'color',
-  'active', 'sort_order',
+  'start_date', 'duration_days', 'min_gap_minutes', 'purpose', 'food_instruction', 'notes',
+  'color', 'active', 'sort_order',
 ] as const;
 
 export async function updateMedication(

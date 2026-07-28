@@ -36,6 +36,14 @@ export interface TakenTimeSheetProps {
   /** Minimum spacing this medicine wants between doses. */
   minGapMinutes: number;
   saving: boolean;
+  /**
+   * The time already recorded, when correcting one rather than setting it.
+   *
+   * This is the case the feature was actually asked for: doses ticked off in a
+   * batch at 13:13 all carry 13:13, which is neither when they were swallowed
+   * nor a sound basis for spacing the next dose.
+   */
+  initialTakenAt?: string | null;
   onConfirm: (takenAtISO: string) => void;
   onCancel: () => void;
 }
@@ -51,14 +59,21 @@ export function TakenTimeSheet({
   nextDoseAt,
   minGapMinutes,
   saving,
+  initialTakenAt,
   onConfirm,
   onCancel,
 }: TakenTimeSheetProps) {
   // Frozen at open. A ticking "now" would make the chips drift under her thumb
   // and could turn a confirmed time into a future one between tap and submit.
   const [openedAt] = useState(() => Date.now());
-  const [minutesAgo, setMinutesAgo] = useState<number | null>(0);
-  const [customHHMM, setCustomHHMM] = useState('');
+  const editing = Boolean(initialTakenAt);
+  // Correcting a time starts from the one already stored, not from "just now" —
+  // the stored value is exactly what she is here to disagree with, but it is
+  // also the closest starting point.
+  const [minutesAgo, setMinutesAgo] = useState<number | null>(editing ? null : 0);
+  const [customHHMM, setCustomHHMM] = useState(() =>
+    initialTakenAt ? toLocalHHMM(Date.parse(initialTakenAt), tzOffsetMinutes) : ''
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -126,7 +141,11 @@ export function TakenTimeSheet({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Confirm when you took ${dose.name}`}
+        aria-label={
+          editing
+            ? `Correct when you took ${dose.name}`
+            : `Confirm when you took ${dose.name}`
+        }
         className={cn(
           'safe-b fixed bottom-0 left-0 right-0 z-[70] max-h-[92dvh] overflow-y-auto',
           'rounded-t-2xl border-t border-white/10 bg-gray-900 shadow-2xl',
@@ -152,7 +171,9 @@ export function TakenTimeSheet({
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-medium text-gray-300">When did you take it?</p>
+            <p className="mb-2 text-sm font-medium text-gray-300">
+              {editing ? 'When did you actually take it?' : 'When did you take it?'}
+            </p>
             <div className="flex flex-wrap gap-2">
               {QUICK_OFFSETS.map((q) => {
                 const active = minutesAgo === q.minutesAgo;
@@ -252,7 +273,7 @@ export function TakenTimeSheet({
               )}
             >
               <Check size={17} strokeWidth={3} />
-              {saving ? 'Saving…' : 'Confirm'}
+              {saving ? 'Saving…' : editing ? 'Update time' : 'Confirm'}
             </button>
           </div>
         </div>

@@ -15,8 +15,8 @@ export const dynamic = 'force-dynamic';
 /** Same whitelist as the create route — unknown keys never reach SQL. */
 const ALLOWED_KEYS = new Set([
   'name', 'strength', 'form', 'dose_label', 'frequency_code', 'times_of_day',
-  'start_date', 'duration_days', 'min_gap_minutes', 'food_instruction', 'notes', 'color',
-  'active', 'sort_order',
+  'start_date', 'duration_days', 'min_gap_minutes', 'purpose', 'food_instruction', 'notes',
+  'color', 'active', 'sort_order',
 ]);
 
 const FREQUENCIES: FrequencyCode[] = ['OD', 'BD', 'TDS', 'QDS', 'CUSTOM'];
@@ -140,6 +140,7 @@ function parsePatch(raw: unknown): Parsed {
   }
 
   if ('strength' in body) patch.strength = optionalText(body.strength);
+  if ('purpose' in body) patch.purpose = optionalText(body.purpose);
   if ('notes' in body) patch.notes = optionalText(body.notes);
 
   if ('active' in body) {

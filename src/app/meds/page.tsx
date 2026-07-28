@@ -281,6 +281,24 @@ export default function MedsPage() {
   // ------------------------------------------------------------------ derived
   const medications = useMemo(() => data?.medications ?? [], [data]);
   const doses = useMemo(() => data?.doses ?? [], [data]);
+
+  /**
+   * Doses taken vs scheduled for each medicine on the day in view.
+   *
+   * Counted from the doses actually on screen rather than times_of_day.length,
+   * so a course that ends part-way through the day reports what was really due
+   * rather than a full day's worth she could never have taken.
+   */
+  const medProgressToday = useMemo(() => {
+    const map = new Map<string, { taken: number; total: number }>();
+    for (const d of doses) {
+      const cur = map.get(d.medication_id) ?? { taken: 0, total: 0 };
+      cur.total += 1;
+      if (d.status === 'taken') cur.taken += 1;
+      map.set(d.medication_id, cur);
+    }
+    return map;
+  }, [doses]);
   const snoozeMinutes = settings?.snooze_min ?? 10;
 
   /**
@@ -789,6 +807,7 @@ export default function MedsPage() {
                       <MedicineCard
                         key={med.id}
                         medication={med}
+                        todayProgress={medProgressToday.get(med.id) ?? null}
                         onEdit={() => {
                           setEditing(med);
                           setEditorOpen(true);
@@ -1041,10 +1060,12 @@ function ScheduleTab({
 
 function MedicineCard({
   medication,
+  todayProgress,
   onEdit,
   onDelete,
 }: {
   medication: Medication;
+  todayProgress: { taken: number; total: number } | null;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -1077,10 +1098,37 @@ function MedicineCard({
             )}
           </div>
 
-          <p className="mt-1 text-xs text-gray-400">
-            {medication.dose_label} · {FREQUENCY_LABELS[medication.frequency_code]} ·{' '}
-            {medication.form}
+          {medication.purpose && (
+            <p className="mt-1 text-xs leading-snug text-gray-400">{medication.purpose}</p>
+          )}
+
+          <p className="mt-1.5 text-xs text-gray-500">
+            {medication.dose_label} · {medication.form} ·{' '}
+            <span className="text-gray-400">
+              {medication.times_of_day.length}
+              {medication.times_of_day.length === 1 ? ' time' : ' times'} a day
+            </span>
+            <span className="text-gray-600"> ({FREQUENCY_LABELS[medication.frequency_code]})</span>
           </p>
+
+          {/* Today's progress at a glance — the "1/3" she asked for. Only shown
+              while the course is actually running, since 0/0 on a finished
+              course reads as a missed dose rather than a completed one. */}
+          {todayProgress && todayProgress.total > 0 && (
+            <p className="mt-1.5 text-[11px] font-medium">
+              <span
+                className={cn(
+                  'font-mono tabular-nums',
+                  todayProgress.taken === todayProgress.total
+                    ? 'text-emerald-400'
+                    : 'text-gray-300'
+                )}
+              >
+                {todayProgress.taken}/{todayProgress.total}
+              </span>
+              <span className="font-normal text-gray-500"> taken today</span>
+            </p>
+          )}
 
           <div className="mt-1.5 flex flex-wrap gap-1">
             {medication.times_of_day.map((time) => (
