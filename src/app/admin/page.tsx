@@ -396,7 +396,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-[#080810]">
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-white/8 bg-[#080810]/80 backdrop-blur-xl">
+      <header className="safe-t safe-x sticky top-0 z-30 border-b border-white/8 bg-[#080810]/80 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Link
@@ -423,7 +423,7 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      <main className="safe-x max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
         {/* Title row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

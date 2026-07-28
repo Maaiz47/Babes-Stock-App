@@ -511,7 +511,7 @@ export default function MedsPage() {
 
   return (
     <div className="min-h-screen bg-[#080810]">
-      <header className="sticky top-0 z-30 border-b border-white/8 bg-[#080810]/80 backdrop-blur-xl">
+      <header className="safe-t safe-x sticky top-0 z-30 border-b border-white/8 bg-[#080810]/80 backdrop-blur-xl">
         <div className="mx-auto max-w-lg px-4 pt-3 sm:px-6 sm:pt-4">
           <div className="flex items-center gap-3">
             <button
@@ -589,7 +589,7 @@ export default function MedsPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-lg space-y-5 px-4 py-5 sm:px-6">
+      <main className="safe-x mx-auto max-w-lg space-y-5 px-4 py-5 sm:px-6">
         {loadError && (
           <div className="flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
             <TriangleAlert size={15} className="mt-0.5 shrink-0 text-red-400" />

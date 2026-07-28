@@ -227,7 +227,7 @@ export default function HomePage() {
         </div>
       )}
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-white/8 bg-[#080810]/80 backdrop-blur-xl">
+      <header className="safe-t safe-x sticky top-0 z-30 border-b border-white/8 bg-[#080810]/80 backdrop-blur-xl">
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 shrink-0">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
@@ -295,7 +295,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-5">
+      <main className="safe-x max-w-screen-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-5">
         {/* Stats row */}
         {(() => {
           const statCards = [

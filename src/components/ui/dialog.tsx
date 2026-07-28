@@ -53,7 +53,9 @@ export function Dialog({ open, onClose, title, description, children, className,
         className={cn(
           'relative w-full bg-gray-900 border border-white/10 shadow-2xl shadow-black/50',
           'rounded-t-2xl sm:rounded-2xl',
-          'flex flex-col max-h-[92dvh] sm:max-h-[90vh]',
+          // safe-b clears the home indicator while this is a bottom sheet on
+          // mobile; the inset resolves to 0 once sm: recentres it.
+          'safe-b flex flex-col max-h-[92dvh] sm:max-h-[90vh]',
           'animate-in fade-in-0 slide-in-from-bottom-2 sm:zoom-in-95 duration-150',
           sizeMap[size],
           className

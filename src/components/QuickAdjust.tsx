@@ -143,7 +143,9 @@ export function QuickAdjust({ item, onClose, onSaved, onMismatchResolved, locati
         onClick={(e) => e.stopPropagation()}
         className={cn(
           'fixed z-50 bg-gray-900 border-white/10 shadow-2xl overflow-y-auto',
-          'bottom-0 left-0 right-0 border-t rounded-t-2xl max-h-[92dvh]',
+          // safe-b keeps the confirm button clear of the home indicator when this
+          // is a bottom sheet; the inset is 0 once sm: recentres it as a modal.
+          'safe-b bottom-0 left-0 right-0 border-t rounded-t-2xl max-h-[92dvh]',
           'sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2',
           'sm:w-full sm:max-w-md sm:border sm:rounded-2xl sm:max-h-[90dvh]',
           'animate-in slide-in-from-bottom-2 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200'

@@ -88,8 +88,13 @@ export function AlarmOverlay({
       className="fixed inset-0 z-[300] overflow-y-auto bg-[#0b0b16]/98"
     >
       <div
-        className="mx-auto flex min-h-full w-full max-w-md flex-col px-5 pt-5"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)' }}
+        className="mx-auto flex min-h-full w-full max-w-md flex-col px-5"
+        style={{
+          // Full-screen overlay under a translucent status bar: without the top
+          // inset the dismiss button sits behind the Dynamic Island.
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)',
+        }}
       >
         <div className="flex justify-end">
           <button

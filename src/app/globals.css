@@ -99,3 +99,24 @@ body {
   0%   { opacity: 1; transform: scale(1) translateY(0); }
   100% { opacity: 0; transform: scale(0.9) translateY(-8px); }
 }
+
+/* ---------------------------------------------------------------- safe areas
+   Installed on iOS the app runs with viewport-fit: cover and a translucent
+   status bar, so the web view genuinely extends under the Dynamic Island and
+   the home indicator. That is what we want — the header background should run
+   all the way to the physical top edge rather than leaving a black band — but
+   the *content* has to be padded back into the visible region or it renders
+   underneath the clock.
+
+   These pad content inward while leaving the element's background filling the
+   inset. env() resolves to 0 everywhere that has no inset (desktop, Android,
+   a plain browser tab), so they are safe to apply unconditionally.
+
+   safe-t is additive: it sits on the outer element so any inner px-/py- utility
+   still applies on top of the inset rather than being replaced by it. */
+.safe-t { padding-top: env(safe-area-inset-top); }
+.safe-b { padding-bottom: env(safe-area-inset-bottom); }
+.safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
