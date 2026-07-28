@@ -199,10 +199,14 @@ export function slotOf(time: string): SlotKey {
  *
  * `force` means "she tapped this, in the app, just now". It is the only thing
  * allowed to move a dose out of a settled status ('taken' / 'skipped'); without
- * it the API answers 409 and writes nothing. Every action in this file is such
- * a tap, so every one of them sets it — otherwise a mis-tapped tick could never
- * be undone, and an accidental "taken" would silence every reminder for a dose
- * she has not actually swallowed.
+ * it the API answers 409 and writes nothing. Only the two actions that are
+ * genuinely overrides set it — the tick toggle and Skip/Un-skip — because a
+ * mis-tapped tick has to be undoable, and an accidental "taken" would otherwise
+ * silence every reminder for a dose she has not actually swallowed.
+ *
+ * Snooze does NOT set it. Snooze writes 'pending', which is not settled, so a
+ * guarded write already succeeds on a genuinely pending dose; adding `force`
+ * there would only unlock reverting a dose she has already taken.
  *
  * The service worker's notification buttons deliberately never set it: a
  * lock-screen reminder can outlive the dose it names by hours.

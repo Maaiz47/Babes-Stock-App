@@ -308,10 +308,10 @@ export default function MedsPage() {
    * to change a dose I already settled". Without it the API refuses to move a
    * dose out of 'taken' or 'skipped' and writes nothing (409) — which is right
    * for a notification button that may have been sitting on the lock screen for
-   * hours, and wrong for her thumb on the tick circle. Every call from this
-   * screen and from the alarm overlay sets it; the service worker never does.
-   * Undoing a mis-tap has to work first time, or an accidental tick silences
-   * every reminder for a dose she has not taken.
+   * hours, and wrong for her thumb on the tick circle. The override actions —
+   * the tick toggle and Skip — set it; Snooze does not, and the service worker
+   * never does. Undoing a mis-tap has to work first time, or an accidental tick
+   * silences every reminder for a dose she has not taken.
    *
    * The options type is the checklist's on purpose: this one function is what
    * both the checklist and useMedAlarm call, so if either contract moves, this
