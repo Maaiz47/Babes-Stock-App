@@ -1,5 +1,6 @@
 import { sql } from '@vercel/postgres';
 import type { StockItem, StockItemInput, StockFilters, BulkActionPayload } from './types';
+import { initMedsSchema } from './meds';
 
 export async function initDB() {
   await sql`
@@ -104,6 +105,9 @@ export async function initDB() {
       ON CONFLICT DO NOTHING
     `;
   }
+
+  // Medicine reminder tables
+  await initMedsSchema();
 }
 
 function mapRow(row: Record<string, unknown>): StockItem {
