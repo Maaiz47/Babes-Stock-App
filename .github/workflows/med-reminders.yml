@@ -1,0 +1,58 @@
+# Medicine reminders — calls the push dispatcher on a schedule.
+#
+# TIMING CAVEAT, please read before relying on this:
+# GitHub's scheduled workflows are best-effort. Runs are frequently delayed, and under
+# platform load the delay can reach 10-20 minutes. The dispatcher is written to tolerate
+# that (it looks backwards over a grace window, so a late run still finds the dose and
+# still sends), but a reminder can arrive noticeably after the scheduled dose time.
+#
+# If that drift matters, a free alternative with 1-minute granularity and much tighter
+# timing is https://cron-job.org — point it at the same URL with the same Authorization
+# header and disable this workflow. Nothing else needs to change.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   APP_URL      full production origin, no trailing slash, e.g. https://your-app.vercel.app
+#   CRON_SECRET  must match the CRON_SECRET environment variable set in Vercel
+
+name: Medicine reminders
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+# Never let a slow run overlap a new one — overlapping runs could double-send.
+concurrency:
+  group: med-reminders
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Call reminder dispatcher
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::APP_URL and CRON_SECRET repository secrets must both be set."
+            exit 1
+          fi
+
+          # --fail-with-body so a non-2xx fails the step but still prints why.
+          # --no-location so an unexpected redirect surfaces as an error instead of
+          # silently following it to a 200 HTML page and looking healthy.
+          curl --fail-with-body \
+               --no-location \
+               --silent \
+               --show-error \
+               --max-time 30 \
+               -X POST \
+               -H "Authorization: Bearer $CRON_SECRET" \
+               -H "Content-Type: application/json" \
+               "$APP_URL/api/meds/dispatch"
+
+          echo ""
+          echo "Dispatcher call completed."
